@@ -1,5 +1,10 @@
 # GoodHR Workbench
 
+## Dokumentacja uzytkowa
+
+- [Instrukcja uzytkownika](docs/INSTRUKCJA_UZYTKOWNIKA.md)
+- [Przedstawienie funkcjonalnosci](docs/PRZEDSTAWIENIE_FUNKCJONALNOSCI.md)
+
 Rozwijalny starter lokalnej aplikacji do analizy ankiet pracowniczych.
 
 To nie jest już statyczna makieta. Aplikacja ma stan, osobne ankiety, prostą analitykę, import CSV, mapowanie kolumn, wykrywanie potencjalnego PII, tematy komentarzy, zapis w `localStorage` i eksport/import ankiety w JSON.
