@@ -1,0 +1,10 @@
+{
+  "type": "module",
+  "scripts": {
+    "serve": "python -m http.server 4173",
+    "serve:lan": "powershell -ExecutionPolicy Bypass -File scripts/start-lan.ps1",
+    "serve:public": "powershell -ExecutionPolicy Bypass -File scripts/start-public.ps1",
+    "deploy": "vercel --prod",
+    "test": "node --test"
+  }
+}

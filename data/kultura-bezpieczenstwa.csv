@@ -1,0 +1,12 @@
+Dział;Lokalizacja;Zmiana;Polecił(a)bym firmę jako miejsce pracy;Zgłaszanie ryzyk jest bezpieczne;Procedury są zrozumiałe;Przełożony reaguje na zgłoszenia;Narzędzia i sprzęt są wystarczające;Presja czasu nie obniża bezpieczeństwa;Co działa dobrze w obszarze bezpieczeństwa?;Co wymaga pilnej poprawy?
+Produkcja;Łódź;A;6;3;3;4;3;2;Odprawy przed zmianą pomagają przypomnieć najważniejsze zasady.;Presja czasu powoduje skracanie procedur.
+Produkcja;Łódź;B;5;3;2;3;2;2;Liderzy reagują gdy ktoś zgłasza oczywiste ryzyko.;Sprzęt bywa niesprawny i zgłoszenia długo czekają.
+Produkcja;Łódź;C;4;2;2;3;2;1;Zespół sam pilnuje nowych osób na linii.;Przy brakach kadrowych bezpieczeństwo schodzi na drugi plan.
+Logistyka;Poznań;A;6;3;3;3;3;2;Dobrze działa oznakowanie stref i ścieżek.;System zgłoszeń jest mało intuicyjny.
+Logistyka;Poznań;B;5;2;3;3;2;2;Starsze osoby pomagają nowym unikać błędów.;Czasem nie wiadomo kto jest właścicielem zgłoszenia.
+Magazyn;Gdańsk;A;7;4;4;4;3;3;Krótkie instrukcje przy stanowiskach są przydatne.;Potrzebujemy szybszej wymiany zużytego sprzętu.
+Magazyn;Gdańsk;B;6;3;3;4;3;2;Przełożony pyta o ryzyka na początku tygodnia.;Za dużo pracy wpada pod koniec zmiany.
+Biuro;Warszawa;Dzienna;8;4;4;4;4;4;Procedury są dostępne i łatwe do znalezienia.;Trzeba lepiej tłumaczyć wpływ pracy biura na operacje.
+Utrzymanie ruchu;Łódź;Dzienna;5;3;3;3;2;2;Zespół zna maszyny i szybko diagnozuje problemy.;Kontakt z produkcją bywa chaotyczny przy awarii.
+Jakość;Łódź;Dzienna;7;4;4;4;3;3;Audyt wewnętrzny pomaga utrzymać standardy.;Po audycie brakuje jasnego planu właścicieli działań.
+

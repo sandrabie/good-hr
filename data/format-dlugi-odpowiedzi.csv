@@ -1,0 +1,14 @@
+id_odpowiedzi;id_pytania;typ_pytania;rola_pracownika_IT;pytanie;tagi;przykladowa_odpowiedz_pracownika
+69;12;zamkniete;Programista Backend;Czy bylbys/bylabys sklonny/sklonna korzystac czesciej z transportu publicznego?;"transport; IT; srodowisko; ankieta";Tak
+70;12;zamkniete;Programistka Frontend;Czy bylbys/bylabys sklonny/sklonna korzystac czesciej z transportu publicznego?;"transport; IT; srodowisko; ankieta";Raczej tak
+71;12;zamkniete;Tester QA;Czy bylbys/bylabys sklonny/sklonna korzystac czesciej z transportu publicznego?;"transport; IT; srodowisko; ankieta";Moze
+72;12;zamkniete;DevOps Engineer;Czy bylbys/bylabys sklonny/sklonna korzystac czesciej z transportu publicznego?;"transport; IT; srodowisko; ankieta";Nie
+73;12;zamkniete;Analityczka biznesowa;Czy bylbys/bylabys sklonny/sklonna korzystac czesciej z transportu publicznego?;"transport; IT; srodowisko; ankieta";Raczej nie
+74;13;otwarte;Programista Backend;Co najbardziej utrudnia codzienna prace?;"procesy; IT; ankieta";Za duzo zadan wpada jako pilne bez jasnego priorytetu.
+75;13;otwarte;Programistka Frontend;Co najbardziej utrudnia codzienna prace?;"procesy; IT; ankieta";Najbardziej przeszkadzaja reczne raporty i dublowanie danych.
+76;14;otwarte;Tester QA;Co utrudnia przeplyw informacji?;"komunikacja; IT; ankieta";Brakuje jednego miejsca z decyzjami i wlascicielami tematow.
+77;15;zamkniete;DevOps Engineer;Jak oceniasz waznosc dzialan srodowiskowych w IT?;"priorytety; IT; srodowisko; ankieta";Bardzo wazne
+78;15;zamkniete;Programista Backend;Jak oceniasz waznosc dzialan srodowiskowych w IT?;"priorytety; IT; srodowisko; ankieta";Wazne
+79;15;zamkniete;Programistka Frontend;Jak oceniasz waznosc dzialan srodowiskowych w IT?;"priorytety; IT; srodowisko; ankieta";Umiarkowanie wazne
+80;15;zamkniete;Tester QA;Jak oceniasz waznosc dzialan srodowiskowych w IT?;"priorytety; IT; srodowisko; ankieta";Malo wazne
+81;15;zamkniete;Analityczka biznesowa;Jak oceniasz waznosc dzialan srodowiskowych w IT?;"priorytety; IT; srodowisko; ankieta";Niewazne
