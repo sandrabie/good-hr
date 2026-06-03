@@ -27,7 +27,7 @@ Typowy raport z ankiety pracowniczej wymaga wielu ręcznych kroków:
 - wczytania danych z Excela lub CSV,
 - rozpoznania, które kolumny są pytaniami, odpowiedziami i segmentami,
 - policzenia wyników,
-- uporządkowania komentarzy,
+- uporządkowania odpowiedzi,
 - sprawdzenia małych grup i danych wrażliwych,
 - przygotowania raportu,
 - napisania wniosków i rekomendacji.
