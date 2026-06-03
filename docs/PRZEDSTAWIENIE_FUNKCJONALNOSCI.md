@@ -1,67 +1,67 @@
-# GoodHR Workbench - przedstawienie funkcjonalnosci
+# GoodHR Workbench - przedstawienie funkcjonalności
 
-## Krotki opis
+## Krótki opis
 
-GoodHR Workbench to narzedzie do analizy ankiet pracowniczych i przygotowywania raportow HR. Aplikacja pomaga przejsc od surowych danych z ankiety do uporzadkowanych wynikow, tematow, segmentow i edytowalnej prezentacji.
+GoodHR Workbench to narzędzie do analizy ankiet pracowniczych i przygotowywania raportów HR. Aplikacja pomaga przejść od surowych danych z ankiety do uporządkowanych wyników, tematów, segmentów i edytowalnej prezentacji.
 
-Najwieksza wartosc aplikacji polega na tym, ze laczy trzy etapy pracy konsultanta:
+Największa wartość aplikacji polega na tym, że łączy trzy etapy pracy konsultanta:
 
-1. Import i porzadkowanie danych.
-2. Analize wynikow, komentarzy i segmentow.
+1. Import i porządkowanie danych.
+2. Analizę wyników, komentarzy i segmentów.
 3. Przygotowanie raportu slajdowego.
 
 ## Dla kogo jest aplikacja
 
 Aplikacja jest przeznaczona dla:
 
-- konsultantow HR,
-- analitykow ankiet pracowniczych,
-- zespolow People/HR,
-- osob przygotowujacych raporty z badan opinii,
-- firm, ktore chca analizowac ankiety lokalnie lub w kontrolowanym srodowisku.
+- konsultantów HR,
+- analityków ankiet pracowniczych,
+- zespołów People/HR,
+- osób przygotowujących raporty z badań opinii,
+- firm, które chcą analizować ankiety lokalnie lub w kontrolowanym środowisku.
 
-## Problem, ktory rozwiazuje
+## Problem, który rozwiązuje
 
-Typowy raport z ankiety pracowniczej wymaga wielu recznych krokow:
+Typowy raport z ankiety pracowniczej wymaga wielu ręcznych kroków:
 
 - wczytania danych z Excela lub CSV,
-- rozpoznania, ktore kolumny sa pytaniami, odpowiedziami i segmentami,
-- policzenia wynikow,
-- uporzadkowania komentarzy,
-- sprawdzenia malych grup i danych wrazliwych,
+- rozpoznania, które kolumny są pytaniami, odpowiedziami i segmentami,
+- policzenia wyników,
+- uporządkowania komentarzy,
+- sprawdzenia małych grup i danych wrażliwych,
 - przygotowania raportu,
-- napisania wnioskow i rekomendacji.
+- napisania wniosków i rekomendacji.
 
-GoodHR Workbench skraca ten proces i daje jedno miejsce pracy nad calym raportem.
+GoodHR Workbench skraca ten proces i daje jedno miejsce pracy nad całym raportem.
 
-## Najwazniejsze funkcje
+## Najważniejsze funkcje
 
 ### 1. Import CSV/XLSX
 
-Aplikacja pozwala wczytywac dane z plikow CSV i Excel. Uzytkownik widzi podglad danych przed importem i moze przypisac kolumny do odpowiednich typow.
+Aplikacja pozwala wczytywać dane z plików CSV i Excel. Użytkownik widzi podgląd danych przed importem i może przypisać kolumny do odpowiednich typów.
 
-Obslugiwane sa m.in.:
+Obsługiwane są m.in.:
 
 - pytania,
 - odpowiedzi,
-- wartosci liczbowe,
+- wartości liczbowe,
 - komentarze,
 - segmenty,
 - eNPS,
-- typy pytan,
-- identyfikatory respondentow i pytan.
+- typy pytań,
+- identyfikatory respondentów i pytań.
 
 ### 2. Mapowanie i szablony importu
 
-Uzytkownik moze zapisac szablon mapowania kolumn. To przyspiesza prace z powtarzalnymi zrodlami danych, np. Webankieta, Excel lub cykliczne badania klienta.
+Użytkownik może zapisać szablon mapowania kolumn. To przyspiesza pracę z powtarzalnymi źródłami danych, np. Webankieta, Excel lub cykliczne badania klienta.
 
-Aplikacja ostrzega, gdy wykryje, ze pytania moga zostac potraktowane jako odpowiedzi.
+Aplikacja ostrzega, gdy wykryje, że pytania mogą zostać potraktowane jako odpowiedzi.
 
 ### 3. Oddzielne ankiety i projekty
 
-Kazdy import tworzy osobna ankiete. Dane nie sa mieszane w dashboardzie.
+Każdy import tworzy osobną ankietę. Dane nie są mieszane w dashboardzie.
 
-Mozna pracowac na kilku ankietach w jednym projekcie, np.:
+Można pracować na kilku ankietach w jednym projekcie, np.:
 
 - fala Q1,
 - fala Q2,
@@ -73,193 +73,191 @@ Mozna pracowac na kilku ankietach w jednym projekcie, np.:
 
 Dashboard pokazuje szybki stan aktywnej ankiety:
 
-- liczbe odpowiedzi,
-- srednie wynikow,
+- liczbę odpowiedzi,
+- średnie wyników,
 - eNPS,
-- gotowosc danych,
-- glowne tematy.
-
-Dashboard jest punktem startowym przed wejsciem w szczegolowa analize.
+- gotowość danych,
+- główne tematy.
 
 ### 5. Wyniki i komentarze
 
-Widok Wyniki laczy dane liczbowe i jakosciowe.
+Widok Wyniki łączy dane liczbowe i jakościowe.
 
-Uzytkownik wybiera:
+Użytkownik wybiera:
 
-1. kategorie,
+1. kategorię,
 2. obszar pytania,
 3. konkretne odpowiedzi i podsumowanie.
 
 Aplikacja pokazuje osobno:
 
 - podsumowanie AI,
-- odpowiedzi respondentow,
-- rozklady odpowiedzi zamknietych,
+- odpowiedzi respondentów,
+- rozkłady odpowiedzi zamkniętych,
 - komentarze otwarte.
 
-### 6. Klasyfikacja tematow
+### 6. Klasyfikacja tematów
 
-Aplikacja tworzy robocze kategorie tematyczne na podstawie pytan i odpowiedzi.
+Aplikacja tworzy robocze kategorie tematyczne na podstawie pytań i odpowiedzi.
 
-Przyklady kategorii:
+Przykłady kategorii:
 
 - komunikacja i decyzje,
-- wspolpraca,
-- narzedzia i procesy,
-- rozwoj,
-- priorytety i przeciazenie,
+- współpraca,
+- narzędzia i procesy,
+- rozwój,
+- priorytety i przeciążenie,
 - inicjatywy Green IT,
-- sprzet i infrastruktura.
+- sprzęt i infrastruktura.
 
-Konsultant moze poprawiac taksonomie i rozdzielac tagi AI od finalnych kategorii.
+Konsultant może poprawiać taksonomię i rozdzielać tagi AI od finalnych kategorii.
 
-### 7. Porownania segmentow
+### 7. Porównania segmentów
 
-Aplikacja pozwala porownywac wyniki wedlug segmentow, np.:
+Aplikacja pozwala porównywać wyniki według segmentów, np.:
 
 - region pracy,
 - rola,
-- dzial,
+- dział,
 - lokalizacja,
-- zespol,
-- staz,
+- zespół,
+- staż,
 - tryb pracy.
 
-Widok segmentow pokazuje roznice miedzy grupami i wskazuje, gdzie problem jest najmocniejszy.
+Widok segmentów pokazuje różnice między grupami i wskazuje, gdzie problem jest najmocniejszy.
 
-Male grupy sa automatycznie ukrywane, aby ograniczyc ryzyko identyfikacji respondentow.
+Małe grupy są automatycznie ukrywane, aby ograniczyć ryzyko identyfikacji respondentów.
 
 ### 8. Kontrola danych
 
-Zakladka Kontrola danych wspiera bezpieczne przygotowanie raportu.
+Zakładka Kontrola danych wspiera bezpieczne przygotowanie raportu.
 
-Sprawdzane sa:
+Sprawdzane są:
 
 - potencjalne dane osobowe,
-- male grupy,
+- małe grupy,
 - progi publikacji,
-- ograniczenia zwiazane z AI.
+- ograniczenia związane z AI.
 
-Aplikacja przypomina, ze raport nie powinien sluzyc do oceny pojedynczych pracownikow.
+Aplikacja przypomina, że raport nie powinien służyć do oceny pojedynczych pracowników.
 
 ### 9. Edytor raportu
 
-Raport jest tworzony jako zestaw edytowalnych slajdow.
+Raport jest tworzony jako zestaw edytowalnych slajdów.
 
-Uzytkownik moze:
+Użytkownik może:
 
-- wygenerowac raport automatycznie,
-- dodawac nowe slajdy,
-- zmieniac kolejnosc slajdow,
-- ukrywac slajdy w eksporcie,
-- nadawac statusy: roboczy, do sprawdzenia, gotowy,
-- edytowac tekst bezposrednio na slajdzie,
-- zmieniac motyw i uklad,
-- uruchomic tryb prezentacji.
+- wygenerować raport automatycznie,
+- dodawać nowe slajdy,
+- zmieniać kolejność slajdów,
+- ukrywać slajdy w eksporcie,
+- nadawać statusy: roboczy, do sprawdzenia, gotowy,
+- edytować tekst bezpośrednio na slajdzie,
+- zmieniać motyw i układ,
+- uruchomić tryb prezentacji.
 
-### 10. Wstawianie elementow
+### 10. Wstawianie elementów
 
-W panelu po prawej mozna wstawic:
+W panelu po prawej można wstawić:
 
 - punkt tekstowy,
-- metryke,
-- tabele,
+- metrykę,
+- tabelę,
 - cytat,
 - punkt kontrolny.
 
-Tabela jest edytowalna i moze sluzyc np. do planu dzialan, porownania segmentow lub listy rekomendacji.
+Tabela jest edytowalna i może służyć np. do planu działań, porównania segmentów lub listy rekomendacji.
 
 ### 11. Eksport
 
-Aplikacja pozwala eksportowac raport do:
+Aplikacja pozwala eksportować raport do:
 
 - Markdown,
 - HTML.
 
-Eksport HTML pozwala otworzyc raport w przegladarce i pokazac go jako prezentacje robocza.
+Eksport HTML pozwala otworzyć raport w przeglądarce i pokazać go jako prezentację roboczą.
 
-### 12. Lokalny model jezykowy
+### 12. Lokalny model językowy
 
-Aplikacja moze korzystac z lokalnego modelu Ollama do tworzenia pelniejszych podsumowan odpowiedzi otwartych.
+Aplikacja może korzystać z lokalnego modelu Ollama do tworzenia pełniejszych podsumowań odpowiedzi otwartych.
 
-To pozwala testowac podejscie AI bez wysylania danych do platnego zewnetrznego API.
+To pozwala testować podejście AI bez wysyłania danych do płatnego zewnętrznego API.
 
-## Przykladowy scenariusz demo
+## Przykładowy scenariusz demo
 
 ### Demo 1: Import danych
 
-1. Otworz zakladke Import.
+1. Otwórz zakładkę Import.
 2. Wybierz plik CSV/XLSX.
-3. Pokaz podglad danych.
-4. Pokaz mapowanie kolumn.
-5. Zaimportuj ankiete.
+3. Pokaż podgląd danych.
+4. Pokaż mapowanie kolumn.
+5. Zaimportuj ankietę.
 
-Cel demo: pokazac, ze aplikacja nie wymaga recznego przepisywania danych.
+Cel demo: pokazać, że aplikacja nie wymaga ręcznego przepisywania danych.
 
-### Demo 2: Analiza wynikow
+### Demo 2: Analiza wyników
 
-1. Przejdz do Dashboardu.
-2. Pokaz glowne metryki ankiety.
-3. Wejdz w Wyniki.
-4. Wybierz kategorie i obszar pytania.
-5. Pokaz podsumowanie i surowe odpowiedzi.
+1. Przejdź do Dashboardu.
+2. Pokaż główne metryki ankiety.
+3. Wejdź w Wyniki.
+4. Wybierz kategorię i obszar pytania.
+5. Pokaż podsumowanie i surowe odpowiedzi.
 
-Cel demo: pokazac, jak z odpowiedzi powstaja wnioski.
+Cel demo: pokazać, jak z odpowiedzi powstają wnioski.
 
 ### Demo 3: Segmenty
 
-1. Otworz widok Segmenty.
+1. Otwórz widok Segmenty.
 2. Wybierz segment, np. region lub rola.
-3. Wybierz pytanie zamkniete.
-4. Pokaz roznice miedzy grupami.
+3. Wybierz pytanie zamknięte.
+4. Pokaż różnice między grupami.
 
-Cel demo: pokazac, gdzie problem jest najmocniejszy i jak aplikacja chroni male grupy.
+Cel demo: pokazać, gdzie problem jest najmocniejszy i jak aplikacja chroni małe grupy.
 
 ### Demo 4: Raport
 
-1. Wejdz w Raport.
+1. Wejdź w Raport.
 2. Wygeneruj raport.
-3. Edytuj tytul slajdu.
-4. Wstaw tabele.
-5. Zmien status slajdu.
+3. Edytuj tytuł slajdu.
+4. Wstaw tabelę.
+5. Zmień status slajdu.
 6. Uruchom tryb prezentacji.
 7. Wyeksportuj HTML.
 
-Cel demo: pokazac, ze aplikacja prowadzi od danych do prezentacji.
+Cel demo: pokazać, że aplikacja prowadzi od danych do prezentacji.
 
-## Korzysci dla uzytkownika
+## Korzyści dla użytkownika
 
-- Mniej recznego przepisywania danych.
-- Szybsze przejscie od ankiety do raportu.
-- Jasne oddzielenie odpowiedzi respondentow od podsumowan AI.
-- Lepsza kontrola nad segmentami i malymi grupami.
-- Mozliwosc pracy na kilku ankietach/projektach.
+- Mniej ręcznego przepisywania danych.
+- Szybsze przejście od ankiety do raportu.
+- Jasne oddzielenie odpowiedzi respondentów od podsumowań AI.
+- Lepsza kontrola nad segmentami i małymi grupami.
+- Możliwość pracy na kilku ankietach/projektach.
 - Edytowalny raport zamiast statycznego wyniku.
 - Lokalna praca z danymi i opcjonalne lokalne AI.
 
-## Zakres odpowiedzialnego uzycia
+## Zakres odpowiedzialnego użycia
 
-GoodHR Workbench powinien wspierac diagnoze organizacyjna, a nie automatyzowac decyzje kadrowe.
+GoodHR Workbench powinien wspierać diagnozę organizacyjną, a nie automatyzować decyzje kadrowe.
 
 Aplikacja nie jest przeznaczona do:
 
-- oceny pojedynczych pracownikow,
+- oceny pojedynczych pracowników,
 - rozpoznawania emocji,
 - profilowania psychologicznego,
 - podejmowania decyzji o zatrudnieniu, awansie, premii lub zwolnieniu.
 
-Ostateczne kategorie, wnioski i rekomendacje powinien zatwierdzic czlowiek.
+Ostateczne kategorie, wnioski i rekomendacje powinien zatwierdzić człowiek.
 
 ## Obecny status produktu
 
-Aplikacja jest zaawansowanym prototypem/MVP. Nadaje sie do testow, demonstracji i dalszego rozwoju funkcji konsultingowych.
+Aplikacja jest zaawansowanym prototypem/MVP. Nadaje się do testów, demonstracji i dalszego rozwoju funkcji konsultingowych.
 
-Najwazniejsze elementy do dalszego rozwoju:
+Najważniejsze elementy do dalszego rozwoju:
 
-- baza danych projektow,
-- konta uzytkownikow i uprawnienia,
+- baza danych projektów,
+- konta użytkowników i uprawnienia,
 - audyt zmian,
 - eksport PPTX/PDF,
-- silniejsze modele jezykowe lub lokalne embeddingi,
-- stabilizacja importu dla kolejnych formatow ankiet.
+- silniejsze modele językowe lub lokalne embeddingi,
+- stabilizacja importu dla kolejnych formatów ankiet.

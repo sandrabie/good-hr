@@ -1,18 +1,20 @@
-# GoodHR Workbench - instrukcja uzytkownika
+# GoodHR Workbench - instrukcja użytkownika
 
-GoodHR Workbench to aplikacja do roboczej analizy ankiet pracowniczych. Pomaga zaimportowac dane z CSV lub Excela, uporzadkowac pytania i odpowiedzi, sprawdzic wyniki, porownac segmenty oraz przygotowac edytowalny raport slajdowy.
+GoodHR Workbench to aplikacja do roboczej analizy ankiet pracowniczych. Pomaga zaimportować dane z CSV lub Excela, uporządkować pytania i odpowiedzi, sprawdzić wyniki, porównać segmenty oraz przygotować edytowalny raport slajdowy.
 
-Aplikacja jest przeznaczona dla konsultantow HR, analitykow, osob przygotowujacych raporty z badan pracowniczych oraz zespolow, ktore chca szybko przejsc od surowych danych ankietowych do wnioskow i prezentacji.
+Aplikacja jest przeznaczona dla konsultantów HR, analityków, osób przygotowujących raporty z badań pracowniczych oraz zespołów, które chcą szybko przejść od surowych danych ankietowych do wniosków i prezentacji.
 
 ## 1. Uruchomienie aplikacji
 
 ### Wersja publiczna
 
-Aplikacja jest dostepna pod adresem:
+Aplikacja jest dostępna pod adresem:
 
+```text
 https://goodhr-workbench.vercel.app
+```
 
-Wersja publiczna dziala w przegladarce. Dane projektow zapisane sa lokalnie w przegladarce uzytkownika, dlatego inna osoba otwierajaca link nie zobaczy automatycznie Twoich lokalnych importow.
+Wersja publiczna działa w przeglądarce. Dane projektów zapisane są lokalnie w przeglądarce użytkownika, dlatego inna osoba otwierająca link nie zobaczy automatycznie Twoich lokalnych importów.
 
 ### Wersja lokalna
 
@@ -22,7 +24,7 @@ W katalogu aplikacji uruchom:
 python -m http.server 4173
 ```
 
-Nastepnie otworz:
+Następnie otwórz:
 
 ```text
 http://127.0.0.1:4173
@@ -30,233 +32,233 @@ http://127.0.0.1:4173
 
 ## 2. Podstawowa nawigacja
 
-Aplikacja ma kilka glownych zakladek:
+Aplikacja ma kilka głównych zakładek:
 
-- Dashboard - szybki podglad aktywnej ankiety.
-- Ankiety - lista projektow, historia ankiet i wersje raportow.
+- Dashboard - szybki podgląd aktywnej ankiety.
+- Ankiety - lista projektów, historia ankiet i wersje raportów.
 - Import - wczytywanie CSV/XLSX oraz mapowanie kolumn.
-- Wyniki - analiza odpowiedzi, tematow, pytan i segmentow.
+- Wyniki - analiza odpowiedzi, tematów, pytań i segmentów.
 - Taksonomia - edycja kategorii tematycznych.
-- Kontrola danych - sprawdzenie PII, malych grup i ograniczen publikacji.
-- Raport - edytor slajdow i eksport raportu.
+- Kontrola danych - sprawdzenie PII, małych grup i ograniczeń publikacji.
+- Raport - edytor slajdów i eksport raportu.
 
 ## 3. Import danych ankietowych
 
-1. Wejdz w zakladke Import.
+1. Wejdź w zakładkę Import.
 2. Wybierz plik CSV lub XLSX z wynikami ankiety.
-3. Sprawdz podglad danych przed importem.
+3. Sprawdź podgląd danych przed importem.
 4. Ustaw mapowanie kolumn:
    - pytanie,
-   - odpowiedz,
+   - odpowiedź,
    - respondent,
    - segment,
    - typ pytania,
-   - wartosc odpowiedzi,
+   - wartość odpowiedzi,
    - eNPS,
    - komentarz,
    - kolumna ignorowana.
-5. Zwroc uwage na ostrzezenia importu. Aplikacja sygnalizuje m.in. sytuacje, gdy pytania moga trafiac do odpowiedzi albo gdy kolumny typu `free_text` lub `suggestion` wygladaja jak metadane, a nie odpowiedzi respondentow.
+5. Zwróć uwagę na ostrzeżenia importu. Aplikacja sygnalizuje m.in. sytuacje, gdy pytania mogą trafić do odpowiedzi albo gdy kolumny typu `free_text` lub `suggestion` wyglądają jak metadane, a nie odpowiedzi respondentów.
 6. Kliknij przycisk importu danych ankiety.
 
-Kazdy import tworzy osobna ankiete. Dashboard i wyniki nie lacza odpowiedzi z roznych plikow.
+Każdy import tworzy osobną ankietę. Dashboard i wyniki nie łączą odpowiedzi z różnych plików.
 
 ## 4. Szablony importu
 
-Jesli czesto importujesz dane z tego samego narzedzia, np. Webankieta, Excel lub powtarzalny CSV:
+Jeśli często importujesz dane z tego samego narzędzia, np. Webankieta, Excel lub powtarzalny CSV:
 
 1. Ustaw poprawne mapowanie kolumn.
 2. Zapisz szablon importu.
 3. Przy kolejnym imporcie wybierz zapisany szablon.
 
-Dzieki temu nie trzeba za kazdym razem recznie przypisywac kolumn.
+Dzięki temu nie trzeba za każdym razem ręcznie przypisywać kolumn.
 
 ## 5. Praca z ankietami
 
-W zakladce Ankiety mozna:
+W zakładce Ankiety można:
 
-- przegladac zapisane ankiety,
-- wybierac aktywna ankiete,
-- sprawdzac historie projektow,
-- porownywac kilka ankiet w ramach jednego projektu,
-- widziec wersje raportow.
+- przeglądać zapisane ankiety,
+- wybierać aktywną ankietę,
+- sprawdzać historię projektów,
+- porównywać kilka ankiet w ramach jednego projektu,
+- widzieć wersje raportów.
 
-Aktywna ankieta jest widoczna w panelu po lewej stronie. Wszystkie metryki i raporty licza sie dla aktualnie wybranej ankiety.
+Aktywna ankieta jest widoczna w panelu po lewej stronie. Wszystkie metryki i raporty liczą się dla aktualnie wybranej ankiety.
 
 ## 6. Dashboard
 
 Dashboard pokazuje szybki stan ankiety:
 
-- liczbe odpowiedzi,
-- srednie wynikow skalowych,
-- eNPS, jezeli ankieta zawiera odpowiednie pytanie,
-- gotowosc danych do raportu,
-- glowne tematy i sygnaly.
+- liczbę odpowiedzi,
+- średnie wyników skalowych,
+- eNPS, jeżeli ankieta zawiera odpowiednie pytanie,
+- gotowość danych do raportu,
+- główne tematy i sygnały.
 
-Z dashboardu mozna przejsc bezposrednio do wynikow.
+Z dashboardu można przejść bezpośrednio do wyników.
 
 ## 7. Wyniki i komentarze
 
-Zakladka Wyniki sluzy do pracy analitycznej.
+Zakładka Wyniki służy do pracy analitycznej.
 
 Typowy przebieg:
 
-1. Wybierz kategorie tematyczna.
+1. Wybierz kategorię tematyczną.
 2. Wybierz obszar pytania.
-3. Sprawdz podsumowanie odpowiedzi.
-4. Przejrzyj surowe odpowiedzi respondentow.
-5. W razie potrzeby wygeneruj pelniejsze podsumowanie przez lokalny model Ollama.
+3. Sprawdź podsumowanie odpowiedzi.
+4. Przejrzyj surowe odpowiedzi respondentów.
+5. W razie potrzeby wygeneruj pełniejsze podsumowanie przez lokalny model Ollama.
 
 Aplikacja rozdziela:
 
 - podsumowanie AI,
-- surowe odpowiedzi respondentow,
+- surowe odpowiedzi respondentów,
 - dane liczbowe,
 - komentarze otwarte.
 
-Przy pytaniach zamknietych aplikacja pokazuje rozklad odpowiedzi, np. ile osob odpowiedzialo `Tak`, `Nie`, `Raczej tak`, `Wazne`, `Malo wazne` itd. Wyniki nie sa ograniczone tylko do odpowiedzi tak/nie.
+Przy pytaniach zamkniętych aplikacja pokazuje rozkład odpowiedzi, np. ile osób odpowiedziało `Tak`, `Nie`, `Raczej tak`, `Ważne`, `Mało ważne` itd. Wyniki nie są ograniczone tylko do odpowiedzi tak/nie.
 
-## 8. Porownania segmentow
+## 8. Porównania segmentów
 
-Widok Segmenty znajduje sie w zakladce Wyniki.
+Widok Segmenty znajduje się w zakładce Wyniki.
 
-Pozwala porownywac odpowiedzi wedlug kolumn segmentujacych, np.:
+Pozwala porównywać odpowiedzi według kolumn segmentujących, np.:
 
 - region pracy,
 - stanowisko,
-- dzial,
+- dział,
 - lokalizacja,
-- zespol,
-- staz,
+- zespół,
+- staż,
 - tryb pracy.
 
-Aplikacja pokazuje tylko pytania zamkniete lub liczbowe, poniewaz na nich segmenty mozna liczyc wiarygodnie. Male grupy sa automatycznie ukrywane zgodnie z progiem bezpieczenstwa.
+Aplikacja pokazuje tylko pytania zamknięte lub liczbowe, ponieważ na nich segmenty można liczyć wiarygodnie. Małe grupy są automatycznie ukrywane zgodnie z progiem bezpieczeństwa.
 
-Widok wskazuje tez, gdzie problem jest najmocniejszy, czyli ktory segment ma najslabszy lub najbardziej ryzykowny wynik.
+Widok wskazuje też, gdzie problem jest najmocniejszy, czyli który segment ma najsłabszy lub najbardziej ryzykowny wynik.
 
-## 9. Taksonomia tematow
+## 9. Taksonomia tematów
 
-Zakladka Taksonomia sluzy do porzadkowania tematow.
+Zakładka Taksonomia służy do porządkowania tematów.
 
-Aplikacja tworzy robocze kategorie AI, ale konsultant moze:
+Aplikacja tworzy robocze kategorie AI, ale konsultant może:
 
-- zmieniac nazwy kategorii,
-- scalac zblizone tematy,
-- poprawiac przypisania,
-- rozdzielac tagi AI od finalnych kategorii konsultanta.
+- zmieniać nazwy kategorii,
+- scalać zbliżone tematy,
+- poprawiać przypisania,
+- rozdzielać tagi AI od finalnych kategorii konsultanta.
 
-To wazne, bo AI ma wspierac analize, ale nie powinno samodzielnie decydowac o ostatecznej strukturze raportu.
+To ważne, bo AI ma wspierać analizę, ale nie powinno samodzielnie decydować o ostatecznej strukturze raportu.
 
 ## 10. Kontrola danych
 
-Zakladka Kontrola danych pomaga sprawdzic, czy raport mozna pokazac dalej.
+Zakładka Kontrola danych pomaga sprawdzić, czy raport można pokazać dalej.
 
-Sprawdzane sa m.in.:
+Sprawdzane są m.in.:
 
-- potencjalne dane osobowe w komentarzach,
-- male grupy respondentow,
+- potencjalne dane osobowe,
+- małe grupy,
 - progi publikacji,
-- ograniczenia wynikajace z uzycia AI.
+- ograniczenia wynikające z użycia AI.
 
-Zalecenie: nie publikuj wynikow segmentow, jezeli grupa jest zbyt mala. Nie uzywaj aplikacji do oceny pojedynczych osob.
+Zalecenie: nie publikuj wyników segmentów, jeżeli grupa jest zbyt mała. Nie używaj aplikacji do oceny pojedynczych osób.
 
 ## 11. Edytor raportu
 
-Zakladka Raport dziala jak prosty edytor slajdow.
+Zakładka Raport działa jak prosty edytor slajdów.
 
-Po prawej stronie znajduje sie panel edycji. Zawiera:
+Po prawej stronie znajduje się panel edycji. Zawiera:
 
-- wybor ankiety,
+- wybór ankiety,
 - eksport Markdown i HTML,
 - generowanie raportu od nowa,
-- dodawanie slajdow,
+- dodawanie slajdów,
 - uruchomienie prezentacji,
 - status aktywnego slajdu,
-- ukrywanie slajdow w eksporcie,
-- zmiane ukladu i motywu,
-- wstawianie elementow.
+- ukrywanie slajdów w eksporcie,
+- zmianę układu i motywu,
+- wstawianie elementów.
 
-Aktywny slajd wybiera sie automatycznie podczas przewijania i edycji. Nie trzeba recznie wybierac slajdu z listy.
+Aktywny slajd wybiera się automatycznie podczas przewijania i edycji. Nie trzeba ręcznie wybierać slajdu z listy.
 
-## 12. Wstawianie elementow w raporcie
+## 12. Wstawianie elementów w raporcie
 
-W panelu po prawej dostepna jest sekcja Wstaw.
+W panelu po prawej dostępna jest sekcja Wstaw.
 
-Mozna dodac:
+Można dodać:
 
 - punkt tekstowy,
-- metryke,
-- tabele,
+- metrykę,
+- tabelę,
 - cytat,
 - punkt kontrolny.
 
-Opcja Tabela tworzy edytowalna tabele z kolumnami:
+Opcja Tabela tworzy edytowalną tabelę z kolumnami:
 
 - Obszar,
-- Wartosc,
+- Wartość,
 - Opis,
 - Status.
 
-Komorki tabeli mozna edytowac bezposrednio na slajdzie.
+Komórki tabeli można edytować bezpośrednio na slajdzie.
 
 ## 13. Eksport raportu
 
-Dostepne eksporty:
+Dostępne eksporty:
 
 - Markdown - tekstowy szkic raportu.
-- HTML - wizualny raport/slajdy do otwarcia w przegladarce.
+- HTML - wizualny raport/slajdy do otwarcia w przeglądarce.
 
-Ukryte slajdy nie trafiaja do prezentacji ani eksportu HTML.
+Ukryte slajdy nie trafiają do prezentacji ani eksportu HTML.
 
 ## 14. Lokalny model Ollama
 
-Aplikacja moze korzystac z lokalnego modelu jezykowego przez Ollama.
+Aplikacja może korzystać z lokalnego modelu językowego przez Ollama.
 
-Przykladowa konfiguracja:
+Przykładowa konfiguracja:
 
 ```powershell
 winget install --id Ollama.Ollama
 ollama pull gemma3
 ```
 
-Nastepnie uruchom Ollama i w aplikacji kliknij generowanie pelniejszego podsumowania.
+Następnie uruchom Ollama i w aplikacji kliknij generowanie pełniejszego podsumowania.
 
-Uwaga: jezeli aplikacja jest otwarta z Vercel, przegladarka moze blokowac polaczenie z lokalna Ollama. Najpewniejszy sposob to otworzyc aplikacje lokalnie pod `http://127.0.0.1:4173`.
+Uwaga: jeżeli aplikacja jest otwarta z Vercel, przeglądarka może blokować połączenie z lokalną Ollama. Najpewniejszy sposób to otworzyć aplikację lokalnie pod `http://127.0.0.1:4173`.
 
 ## 15. Dobre praktyki
 
-- Zawsze sprawdz mapowanie kolumn przed importem.
-- Nie pokazuj wynikow bardzo malych grup.
-- Sprawdz cytaty i komentarze pod katem danych osobowych.
-- Traktuj kategorie AI jako szkic, nie jako ostateczna prawde.
-- Przed wyslaniem raportu klientowi przejrzyj kazdy slajd.
-- Nie uzywaj wynikow do decyzji kadrowych wobec pojedynczych osob.
+- Zawsze sprawdź mapowanie kolumn przed importem.
+- Nie pokazuj wyników bardzo małych grup.
+- Sprawdź cytaty i komentarze pod kątem danych osobowych.
+- Traktuj kategorie AI jako szkic, nie jako ostateczną prawdę.
+- Przed wysłaniem raportu klientowi przejrzyj każdy slajd.
+- Nie używaj wyników do decyzji kadrowych wobec pojedynczych osób.
 
-## 16. Najczestsze problemy
+## 16. Najczęstsze problemy
 
 ### Aplikacja pokazuje pytania zamiast odpowiedzi
 
-Sprawdz mapowanie kolumn w imporcie. Kolumna z trescia pytania powinna byc oznaczona jako pytanie, a kolumna z wypowiedzia respondenta jako odpowiedz.
+Sprawdź mapowanie kolumn w imporcie. Kolumna z treścią pytania powinna być oznaczona jako pytanie, a kolumna z wypowiedzią respondenta jako odpowiedź.
 
-### Segmenty sa dziwne albo nieuzyteczne
+### Segmenty są dziwne albo nieużyteczne
 
-Sprawdz, czy kolumna segmentu jest faktycznie cecha respondenta, np. region, dzial, rola, lokalizacja. Nie oznaczaj jako segmentu kolumn z pytaniami ankietowymi.
+Sprawdź, czy kolumna segmentu jest faktycznie cechą respondenta, np. region, dział, rola, lokalizacja. Nie oznaczaj jako segmentu kolumn z pytaniami ankietowymi.
 
-### Brakuje wynikow w segmencie
+### Brakuje wyników w segmencie
 
-Aplikacja ukrywa male grupy. To celowe zabezpieczenie przed identyfikacja respondentow.
+Aplikacja ukrywa małe grupy. To celowe zabezpieczenie przed identyfikacją respondentów.
 
 ### Ollama nie odpowiada
 
-Sprawdz, czy Ollama jest uruchomiona i czy model zostal pobrany:
+Sprawdź, czy Ollama jest uruchomiona i czy model został pobrany:
 
 ```powershell
 ollama pull gemma3
 ```
 
-### Dane zniknely po otwarciu aplikacji na innym komputerze
+### Dane zniknęły po otwarciu aplikacji na innym komputerze
 
-Dane sa zapisane lokalnie w przegladarce. Inne urzadzenie nie ma automatycznie dostepu do Twoich lokalnych projektow.
+Dane są zapisane lokalnie w przeglądarce. Inne urządzenie nie ma automatycznie dostępu do Twoich lokalnych projektów.
 
 ## 17. Ograniczenia
 
-GoodHR Workbench jest prototypem roboczym. Nie ma jeszcze pelnej bazy danych, kont uzytkownikow, uprawnien, audytu zmian ani zaawansowanego eksportu do PPTX. Narzedzie najlepiej traktowac jako wspomaganie analizy i przygotowania raportu, a nie jako samodzielny system decyzyjny.
+GoodHR Workbench jest prototypem roboczym. Nie ma jeszcze pełnej bazy danych, kont użytkowników, uprawnień, audytu zmian ani zaawansowanego eksportu do PPTX. Narzędzie najlepiej traktować jako wspomaganie analizy i przygotowania raportu, a nie jako samodzielny system decyzyjny.
