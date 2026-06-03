@@ -91,6 +91,45 @@ button {
   font-size: 12px;
 }
 
+.account-mini {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.account-mini strong,
+.account-mini span {
+  display: block;
+}
+
+.account-mini strong {
+  margin-top: 4px;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.account-mini span {
+  max-width: 150px;
+  overflow: hidden;
+  color: #cbd9d6;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-mini .ghost {
+  min-height: 30px;
+  padding: 0 9px;
+  color: #e9f4f1;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
 .active-project {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--radius);
@@ -225,6 +264,53 @@ button {
   overflow: auto;
 }
 
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: linear-gradient(180deg, #eef4f3 0%, #f8faf9 100%);
+}
+
+.auth-card {
+  width: min(1060px, 100%);
+  display: grid;
+  gap: 16px;
+}
+
+.auth-brand {
+  width: max-content;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.auth-brand span {
+  color: var(--muted);
+}
+
+.auth-intro {
+  max-width: 760px;
+}
+
+.auth-intro h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.auth-intro p,
+.auth-note {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.auth-note {
+  display: flex;
+  gap: 8px;
+}
+
 .button,
 .primary,
 .ghost,
@@ -334,6 +420,14 @@ input[type="file"] {
 
 .wide-right {
   grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.5fr);
+}
+
+.account-grid {
+  margin-top: 14px;
+}
+
+.supabase-panel {
+  margin-top: 14px;
 }
 
 .panel,

@@ -1,4 +1,5 @@
 import { getCurrentProject, loadState, saveState, upsertProject, removeProject, exportProject, importProjectFile, createId } from "./store.js";
+import { createLocalAccount, getAccounts, getCurrentAccount, loginLocalAccount, logoutAccount, switchAccount } from "./accounts.js";
 import { parseCSV, parseTabularFile, inferColumns } from "./csv.js";
 import { buildReportDraft, calculateEnps, collectComments, detectPii, getAiAnswerInsights, getColumns, getHeatmap, getMetricSummary, getQuestionStats, getSegmentComparison, getTopics, redactText } from "./analytics.js";
 import { sampleCsvFiles } from "./data.js";
@@ -10,10 +11,12 @@ const viewMeta = {
   analysis: ["Wyniki i komentarze", "Podsumowanie AI oddzielone od odpowiedzi ankietowanych."],
   taxonomy: ["Taksonomia", "Robocze tagi AI i końcowe kategorie konsultanta."],
   privacy: ["Kontrola danych", "PII, małe grupy i progi publikacji przed raportem."],
-  report: ["Studio raportu", "Szkic narracji, dowody i eksport roboczy."]
+  report: ["Studio raportu", "Szkic narracji, dowody i eksport roboczy."],
+  account: ["Konto i projekty", "Lokalne konta, osobna historia projektów i przygotowanie pod Supabase."]
 };
 
-let state = loadState();
+let currentAccount = getCurrentAccount();
+let state = currentAccount ? loadState(currentAccount.id) : null;
 let activeView = "dashboard";
 let importDraft = null;
 let analysisFilters = {
@@ -102,6 +105,14 @@ const importColumnTypes = ["segment", "scale", "enps", "comment", "question_text
 render();
 
 function render() {
+  currentAccount = getCurrentAccount();
+  if (!currentAccount) {
+    renderAuth();
+    return;
+  }
+  if (!state || state.accountId !== currentAccount.id) {
+    state = loadState(currentAccount.id);
+  }
   const project = getCurrentProject(state);
   const [title, subtitle] = viewMeta[activeView];
 
@@ -115,6 +126,8 @@ function render() {
             <span>lokalna analiza ankiet</span>
           </div>
         </div>
+
+        ${renderSidebarAccount(currentAccount)}
 
         <div class="active-project">
           <div class="eyebrow">Aktywna ankieta</div>
@@ -133,6 +146,7 @@ function render() {
           ${navButton("taxonomy", "Taksonomia")}
           ${navButton("privacy", "Kontrola danych")}
           ${navButton("report", "Raport")}
+          ${navButton("account", "Konto")}
         </nav>
 
         <div class="sidebar-footer">
@@ -160,6 +174,95 @@ function render() {
   bindViewEvents(project);
 }
 
+function renderAuth() {
+  const accounts = getAccounts();
+  const firstAccount = accounts[0];
+
+  app.innerHTML = `
+    <main class="auth-shell">
+      <section class="auth-card">
+        <div class="brand auth-brand">
+          <div class="mark">GH</div>
+          <div>
+            <strong>GoodHR Workbench</strong>
+            <span>schemat kont lokalnych</span>
+          </div>
+        </div>
+        <div class="auth-intro">
+          <h1>Zaloguj się do przestrzeni projektu</h1>
+          <p>Ten etap rozdziela historię ankiet, raporty i szablony importu między lokalnymi kontami. To makieta funkcjonalna pod późniejsze podłączenie Supabase.</p>
+        </div>
+        <div class="grid cols-2">
+          <div class="panel">
+            <div class="section-head">
+              <div>
+                <h2>Logowanie lokalne</h2>
+                <p>Wybierz zapisane konto i podaj PIN, jeśli został ustawiony.</p>
+              </div>
+            </div>
+            <div class="form-grid">
+              <div class="field">
+                <label for="loginEmail">Konto</label>
+                <select id="loginEmail">
+                  ${accounts.map((account) => `<option value="${escapeAttribute(account.email)}" ${account.id === firstAccount?.id ? "selected" : ""}>${escapeHtml(account.name)} · ${escapeHtml(account.email)}</option>`).join("")}
+                </select>
+              </div>
+              <div class="field">
+                <label for="loginPin">PIN demonstracyjny</label>
+                <input id="loginPin" type="password" placeholder="Zostaw puste, jeśli konto nie ma PIN-u" />
+              </div>
+              <button class="primary" id="loginAccount">Zaloguj</button>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="section-head">
+              <div>
+                <h2>Nowe konto</h2>
+                <p>Utwórz osobną przestrzeń projektów dla konsultanta lub klienta testowego.</p>
+              </div>
+            </div>
+            <div class="form-grid">
+              <div class="field">
+                <label for="newAccountName">Nazwa użytkownika</label>
+                <input id="newAccountName" placeholder="np. Sandra / Konsultant HR" />
+              </div>
+              <div class="field">
+                <label for="newAccountEmail">E-mail</label>
+                <input id="newAccountEmail" type="email" placeholder="np. sandra@example.com" />
+              </div>
+              <div class="field">
+                <label for="newAccountPin">PIN demonstracyjny</label>
+                <input id="newAccountPin" type="password" placeholder="Opcjonalnie" />
+              </div>
+              <button class="button" id="createAccount">Utwórz konto i zaloguj</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel auth-note">
+          <strong>Ważne:</strong>
+          <span>To nie jest jeszcze produkcyjne logowanie. Dane są rozdzielane lokalnie w przeglądarce. Docelowo tę warstwę można przepiąć na Supabase Auth i tabelę projektów przypisaną do user_id.</span>
+        </div>
+      </section>
+      <div id="toast" class="toast" role="status"></div>
+    </main>
+  `;
+
+  bindAuthEvents();
+}
+
+function renderSidebarAccount(account) {
+  return `
+    <div class="account-mini">
+      <div>
+        <div class="eyebrow">Konto</div>
+        <strong>${escapeHtml(account.name)}</strong>
+        <span>${escapeHtml(account.email)}</span>
+      </div>
+      <button class="ghost small" data-nav-target="account">Panel</button>
+    </div>
+  `;
+}
+
 function navButton(view, label) {
   return `<button data-nav="${view}" class="${activeView === view ? "active" : ""}">${label}</button>`;
 }
@@ -172,6 +275,7 @@ function renderActiveView(project) {
   if (activeView === "taxonomy") return renderTaxonomy(project);
   if (activeView === "privacy") return renderPrivacy(project);
   if (activeView === "report") return renderReport(project);
+  if (activeView === "account") return renderAccount(project);
   return "";
 }
 
@@ -267,7 +371,7 @@ function renderProjects() {
       <div class="section-head">
         <div>
           <h2>Ankiety</h2>
-          <p>${state.projects.length} zapisanych importów. Każdy wiersz ma własny dashboard i własne odpowiedzi.</p>
+          <p>${state.projects.length} zapisanych importów na koncie ${escapeHtml(currentAccount.name)}. Każdy wiersz ma własny dashboard i własne odpowiedzi.</p>
         </div>
       </div>
       <div class="panel" style="margin-bottom: 14px;">
@@ -306,6 +410,124 @@ function renderProjects() {
         </table>
       </div>
       ${renderProjectHistory()}
+    </section>
+  `;
+}
+
+function renderAccount() {
+  const accounts = getAccounts();
+  const accountRows = accounts.map((account) => ({
+    account,
+    state: loadState(account.id)
+  }));
+  const currentProjectCount = state.projects.length;
+  const currentResponseCount = state.projects.reduce((sum, project) => sum + (project.responses?.length || 0), 0);
+
+  return `
+    <section class="view active">
+      <div class="section-head">
+        <div>
+          <h2>Konto i przestrzeń projektów</h2>
+          <p>Roboczy system logowania rozdziela ankiety, historię projektów, raporty i szablony importu per konto.</p>
+        </div>
+        <button class="danger" id="logoutAccount">Wyloguj</button>
+      </div>
+
+      <div class="grid cols-4">
+        ${metric("Aktywne konto", currentAccount.name, currentAccount.email)}
+        ${metric("Ankiety", currentProjectCount, "widoczne tylko dla tego konta")}
+        ${metric("Odpowiedzi", currentResponseCount, "we wszystkich ankietach konta")}
+        ${metric("Szablony importu", state.importTemplates?.length || 0, "zapisane lokalnie dla konta")}
+      </div>
+
+      <div class="grid wide-left account-grid">
+        <div class="panel">
+          <div class="section-head">
+            <div>
+              <h2>Lokalne konta</h2>
+              <p>Przełączenie konta ładuje osobną historię projektów i osobny zapis raportów.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Konto</th>
+                  <th>Rola</th>
+                  <th>Ankiety</th>
+                  <th>Odpowiedzi</th>
+                  <th>Ostatnie logowanie</th>
+                  <th>Akcja</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${accountRows.map(({ account, state: accountState }) => `
+                  <tr>
+                    <td><strong>${escapeHtml(account.name)}</strong><br><span class="muted">${escapeHtml(account.email)}</span></td>
+                    <td>${escapeHtml(account.role || "Konsultant")}</td>
+                    <td>${accountState.projects.length}</td>
+                    <td>${accountState.projects.reduce((sum, project) => sum + (project.responses?.length || 0), 0)}</td>
+                    <td>${escapeHtml(formatDateTime(account.lastLoginAt || account.createdAt))}</td>
+                    <td>
+                      ${account.id === currentAccount.id
+                        ? `<span class="pill teal">aktywne</span>`
+                        : `<button class="button" data-switch-account="${escapeAttribute(account.id)}">Przełącz</button>`}
+                    </td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="section-head">
+            <div>
+              <h2>Dodaj konto</h2>
+              <p>Nowe konto dostanie własną, pustą przestrzeń projektów z przykładową ankietą startową.</p>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="accountName">Nazwa użytkownika</label>
+              <input id="accountName" placeholder="np. Konsultant HR" />
+            </div>
+            <div class="field">
+              <label for="accountEmail">E-mail</label>
+              <input id="accountEmail" type="email" placeholder="np. konsultant@example.com" />
+            </div>
+            <div class="field">
+              <label for="accountPin">PIN demonstracyjny</label>
+              <input id="accountPin" type="password" placeholder="Opcjonalnie" />
+            </div>
+            <button class="primary" id="createAccountFromPanel">Utwórz konto</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel supabase-panel">
+        <div class="section-head">
+          <div>
+            <h2>Przygotowanie pod Supabase</h2>
+            <p>Obecny system jest lokalną makietą. Struktura jest gotowa do późniejszego przeniesienia na backend.</p>
+          </div>
+          <span class="pill amber">tryb lokalny</span>
+        </div>
+        <div class="grid cols-3">
+          <div class="control-card ok">
+            <strong>Auth</strong>
+            <p>Obecnie: konto lokalne. Docelowo: Supabase Auth z logowaniem e-mail/magic link.</p>
+          </div>
+          <div class="control-card ok">
+            <strong>Projekty</strong>
+            <p>Obecnie: osobny localStorage per konto. Docelowo: tabela projects z kolumną user_id.</p>
+          </div>
+          <div class="control-card warn">
+            <strong>Historia raportów</strong>
+            <p>Obecnie: wersje w projekcie. Docelowo: tabela report_versions i uprawnienia zespołowe.</p>
+          </div>
+        </div>
+      </div>
     </section>
   `;
 }
@@ -2821,6 +3043,85 @@ function renderEditableBulletList(items) {
   `;
 }
 
+function bindAuthEvents() {
+  app.querySelector("#loginAccount")?.addEventListener("click", () => {
+    try {
+      const account = loginLocalAccount(app.querySelector("#loginEmail")?.value, app.querySelector("#loginPin")?.value || "");
+      activateAccount(account, "dashboard");
+      toast("Zalogowano do lokalnej przestrzeni projektów.");
+    } catch (error) {
+      toast(error.message || "Nie udało się zalogować.");
+    }
+  });
+
+  app.querySelector("#createAccount")?.addEventListener("click", () => {
+    try {
+      const account = createLocalAccount({
+        name: app.querySelector("#newAccountName")?.value,
+        email: app.querySelector("#newAccountEmail")?.value,
+        pin: app.querySelector("#newAccountPin")?.value
+      });
+      activateAccount(account, "dashboard");
+      toast("Utworzono konto i osobną przestrzeń projektów.");
+    } catch (error) {
+      toast(error.message || "Nie udało się utworzyć konta.");
+    }
+  });
+}
+
+function bindAccountEvents() {
+  app.querySelector("#logoutAccount")?.addEventListener("click", () => {
+    logoutAccount();
+    currentAccount = null;
+    state = null;
+    activeView = "dashboard";
+    render();
+  });
+
+  app.querySelector("#createAccountFromPanel")?.addEventListener("click", () => {
+    try {
+      const account = createLocalAccount({
+        name: app.querySelector("#accountName")?.value,
+        email: app.querySelector("#accountEmail")?.value,
+        pin: app.querySelector("#accountPin")?.value
+      });
+      activateAccount(account, "account");
+      toast("Utworzono i przełączono konto.");
+    } catch (error) {
+      toast(error.message || "Nie udało się utworzyć konta.");
+    }
+  });
+
+  app.querySelectorAll("[data-switch-account]").forEach((button) => {
+    button.addEventListener("click", () => {
+      try {
+        const account = switchAccount(button.dataset.switchAccount);
+        activateAccount(account, "dashboard");
+        toast(`Przełączono na konto ${account.name}.`);
+      } catch (error) {
+        toast(error.message || "Nie udało się przełączyć konta.");
+      }
+    });
+  });
+}
+
+function activateAccount(account, view = "dashboard") {
+  currentAccount = account;
+  state = loadState(account.id);
+  activeView = view;
+  analysisFilters = {
+    category: "__all",
+    question: "__all"
+  };
+  segmentCompareState = {
+    segmentColumn: "",
+    question: ""
+  };
+  activeReportSlideId = "";
+  reportPresentationMode = false;
+  render();
+}
+
 function bindShellEvents() {
   app.querySelectorAll("[data-nav]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -2898,6 +3199,7 @@ function bindViewEvents(project) {
   if (activeView === "taxonomy") bindTaxonomyEvents(project);
   if (activeView === "privacy") bindPrivacyEvents(project);
   if (activeView === "report") bindReportEvents(project);
+  if (activeView === "account") bindAccountEvents();
 }
 
 function bindAnalysisEvents(project) {

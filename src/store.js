@@ -1,5 +1,6 @@
 import { sampleProject } from "./data.js";
 import { inferColumns } from "./csv.js";
+import { DEFAULT_ACCOUNT_ID, getAccountStorageKey } from "./accounts.js";
 
 const STORAGE_KEY = "goodhr.workbench.v1";
 
@@ -7,14 +8,11 @@ export function createId(prefix = "project") {
   return `${prefix}-${crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)}`;
 }
 
-export function loadState() {
-  const raw = localStorage.getItem(STORAGE_KEY);
+export function loadState(accountId = DEFAULT_ACCOUNT_ID) {
+  const storageKey = getAccountStorageKey(accountId);
+  const raw = localStorage.getItem(storageKey) || getLegacyStateForDefaultAccount(accountId);
   if (!raw) {
-    const state = {
-      currentProjectId: sampleProject.id,
-      projects: [sampleProject],
-      importTemplates: []
-    };
+    const state = createDefaultState(accountId);
     saveState(state);
     return state;
   }
@@ -24,22 +22,24 @@ export function loadState() {
     if (!Array.isArray(parsed.projects) || parsed.projects.length === 0) {
       throw new Error("Invalid store");
     }
+    parsed.accountId = accountId;
     parsed.importTemplates = Array.isArray(parsed.importTemplates) ? parsed.importTemplates : [];
-    parsed.projects = parsed.projects.map(normalizeProject);
+    parsed.projects = parsed.projects.map((project) => normalizeProject(project, accountId));
+    if (!parsed.projects.some((project) => project.id === parsed.currentProjectId)) {
+      parsed.currentProjectId = parsed.projects[0].id;
+    }
+    saveState(parsed);
     return parsed;
   } catch {
-    const state = {
-      currentProjectId: sampleProject.id,
-      projects: [sampleProject],
-      importTemplates: []
-    };
+    const state = createDefaultState(accountId);
     saveState(state);
     return state;
   }
 }
 
-export function saveState(state) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+export function saveState(state, accountId = state?.accountId || DEFAULT_ACCOUNT_ID) {
+  state.accountId = accountId;
+  localStorage.setItem(getAccountStorageKey(accountId), JSON.stringify(state));
 }
 
 export function getCurrentProject(state) {
@@ -47,6 +47,8 @@ export function getCurrentProject(state) {
 }
 
 export function upsertProject(state, project) {
+  project.ownerAccountId = state.accountId || DEFAULT_ACCOUNT_ID;
+  project.updatedAt = new Date().toISOString();
   const index = state.projects.findIndex((item) => item.id === project.id);
   if (index >= 0) {
     state.projects[index] = project;
@@ -60,7 +62,7 @@ export function upsertProject(state, project) {
 export function removeProject(state, projectId) {
   state.projects = state.projects.filter((project) => project.id !== projectId);
   if (state.projects.length === 0) {
-    state.projects = [sampleProject];
+    state.projects = [cloneSampleProject(state.accountId || DEFAULT_ACCOUNT_ID)];
   }
   if (!state.projects.some((project) => project.id === state.currentProjectId)) {
     state.currentProjectId = state.projects[0].id;
@@ -90,11 +92,31 @@ export async function importProjectFile(file) {
   return project;
 }
 
-function normalizeProject(project) {
+function createDefaultState(accountId) {
+  const project = cloneSampleProject(accountId);
+  return {
+    accountId,
+    currentProjectId: project.id,
+    projects: [project],
+    importTemplates: []
+  };
+}
+
+function cloneSampleProject(accountId) {
+  return normalizeProject(JSON.parse(JSON.stringify(sampleProject)), accountId);
+}
+
+function getLegacyStateForDefaultAccount(accountId) {
+  if (accountId !== DEFAULT_ACCOUNT_ID) return "";
+  return localStorage.getItem(STORAGE_KEY) || "";
+}
+
+function normalizeProject(project, accountId = DEFAULT_ACCOUNT_ID) {
   const responses = Array.isArray(project.responses) ? project.responses : [];
   const schema = normalizeSchema(project.schema, responses);
   return {
     ...project,
+    ownerAccountId: project.ownerAccountId || accountId,
     sourceFile: project.sourceFile || project.importSource || project.wave || "ręcznie utworzona ankieta",
     status: project.status || "oddzielna ankieta",
     thresholds: project.thresholds || { numeric: 5, comments: 10 },
