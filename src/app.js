@@ -40,6 +40,7 @@ let lastToastMessage = "";
 let toastTimer = 0;
 let importFeedback = null;
 let pendingDeleteProjectId = "";
+let importInProgress = false;
 
 function loadOllamaSettings() {
   try {
@@ -323,15 +324,16 @@ function renderDashboard(project) {
 
 function renderImportFeedback() {
   if (!importFeedback) return "";
+  const level = importFeedback.level || "success";
 
   return `
-    <div id="importSuccessFeedback" class="import-success" role="status">
+    <div id="importSuccessFeedback" class="import-success ${escapeAttribute(level)}" role="status">
       <div>
         <strong>${escapeHtml(importFeedback.title)}</strong>
         <p>${escapeHtml(importFeedback.text)}</p>
       </div>
       <div class="actions">
-        <button class="primary" data-nav-target="analysis">Przejdź do wyników</button>
+        ${importFeedback.projectId ? `<button class="primary" data-nav-target="analysis">Przejdź do wyników</button>` : ""}
         <button class="ghost small" data-dismiss-import-feedback>Zamknij</button>
       </div>
     </div>
@@ -716,7 +718,7 @@ function renderImport(project) {
                 <span class="eyebrow">Gotowe do importu</span>
                 <strong>${escapeHtml(importDraft.sourceFile || "plik z danymi")}</strong>
                 <span>${rows.length} wierszy · ${columns.length} kolumn · ${columns.filter((column) => ["comment", "answer_text", "answer_value"].includes(column.type)).length} kolumn odpowiedzi</span>
-                <button class="primary import-cta" id="createProjectFromCsv">Importuj dane ankiety</button>
+                <button class="primary import-cta" id="createProjectFromCsv" ${importInProgress ? "disabled" : ""}>${importInProgress ? "Importowanie danych..." : "Importuj dane ankiety"}</button>
               </div>
             ` : ""}
           </div>
@@ -3434,7 +3436,18 @@ function bindProjectsEvents() {
       event.preventDefault();
       const projectToDelete = state.projects.find((item) => item.id === button.dataset.confirmDeleteProject);
       if (!projectToDelete) return;
-      removeProject(state, button.dataset.confirmDeleteProject);
+      const previousProjects = [...state.projects];
+      const previousCurrentProjectId = state.currentProjectId;
+      try {
+        removeProject(state, button.dataset.confirmDeleteProject);
+      } catch (error) {
+        state.projects = previousProjects;
+        state.currentProjectId = previousCurrentProjectId;
+        pendingDeleteProjectId = "";
+        toast(error.message || "Nie udało się usunąć ankiety z zapisu.");
+        render();
+        return;
+      }
       pendingDeleteProjectId = "";
       toast(`Usunięto ankietę: ${projectToDelete.name}.`);
       render();
@@ -3476,6 +3489,7 @@ function bindImportEvents() {
       sourceKind: app.querySelector("#importSourceKind")?.value || getSourceKindFromFile(file.name),
       sourceFile: file.name
     };
+    importInProgress = false;
     importFeedback = null;
     toast(`Odczytano ${rows.length} rekordów.`);
     render();
@@ -3536,6 +3550,7 @@ function bindImportEvents() {
           sourceKind: "CSV",
           sourceFile: file
         };
+        importInProgress = false;
         importFeedback = null;
         toast(`Wczytano przykład: ${sample?.name || file}.`);
         render();
@@ -3546,10 +3561,36 @@ function bindImportEvents() {
   });
 
   app.querySelector("#createProjectFromCsv")?.addEventListener("click", () => {
-    if (!importDraft?.rows?.length) return;
-    const columns = importDraft.columns.filter((column) => column.type !== "ignore");
-    const ignored = new Set(importDraft.columns.filter((column) => column.type === "ignore").map((column) => column.name));
-    const responses = importDraft.rows.map((row) => {
+    if (!importDraft?.rows?.length || importInProgress) return;
+    const draft = {
+      ...importDraft,
+      rows: importDraft.rows,
+      columns: importDraft.columns
+    };
+    const formValues = {
+      client: app.querySelector("#clientName")?.value || importDraft.client,
+      name: app.querySelector("#projectName")?.value || importDraft.name,
+      wave: app.querySelector("#waveName")?.value || importDraft.wave
+    };
+    importInProgress = true;
+    importFeedback = {
+      level: "info",
+      title: "Importowanie danych ankiety",
+      text: "Trwa tworzenie ankiety i zapisywanie jej w przeglądarce."
+    };
+    toast("Importuję dane ankiety...");
+    render();
+
+    window.setTimeout(() => {
+      finishSurveyImport(draft, formValues);
+    }, 0);
+  });
+}
+
+function finishSurveyImport(draft, formValues) {
+  const columns = draft.columns.filter((column) => column.type !== "ignore");
+  const ignored = new Set(draft.columns.filter((column) => column.type === "ignore").map((column) => column.name));
+  const responses = draft.rows.map((row) => {
       const cleaned = {};
       Object.entries(row).forEach(([key, value]) => {
         if (!ignored.has(key)) cleaned[key] = value;
@@ -3559,22 +3600,42 @@ function bindImportEvents() {
 
     const project = {
       id: createId("project"),
-      client: app.querySelector("#clientName")?.value || importDraft.client,
-      name: app.querySelector("#projectName")?.value || importDraft.name,
-      wave: app.querySelector("#waveName")?.value || importDraft.wave,
-      sourceFile: importDraft.sourceFile || "CSV",
-      sourceKind: importDraft.sourceKind || "Auto",
+      client: formValues.client,
+      name: formValues.name,
+      wave: formValues.wave,
+      sourceFile: draft.sourceFile || "CSV",
+      sourceKind: draft.sourceKind || "Auto",
       status: "oddzielna ankieta",
       createdAt: new Date().toISOString(),
       thresholds: { numeric: 5, comments: 10 },
-      projectGroup: app.querySelector("#projectName")?.value || importDraft.name,
+      projectGroup: formValues.name,
       reportVersions: [],
       schema: { columns },
       responses
     };
 
+  const previousProjects = [...state.projects];
+  const previousCurrentProjectId = state.currentProjectId;
+  try {
     upsertProject(state, project);
+  } catch (error) {
+    state.projects = previousProjects;
+    state.currentProjectId = previousCurrentProjectId;
+    importInProgress = false;
     importFeedback = {
+      level: "error",
+      title: "Nie udało się zaimportować ankiety",
+      text: error.message || "Przeglądarka nie pozwoliła zapisać danych. Spróbuj usunąć starsze ankiety albo zaimportować mniejszy plik."
+    };
+    toast("Nie udało się zapisać ankiety.");
+    render();
+    scrollImportFeedbackIntoView();
+    return;
+  }
+
+    importInProgress = false;
+    importFeedback = {
+      level: "success",
       projectId: project.id,
       title: "Dane ankiety zostały zaimportowane",
       text: `Utworzono ankietę "${project.name}" z ${responses.length} odpowiedziami. Możesz przejść do wyników albo wczytać kolejny plik.`
@@ -3583,9 +3644,12 @@ function bindImportEvents() {
     activeView = "import";
     toast(`Zaimportowano dane ankiety: ${project.name} (${responses.length} odpowiedzi).`);
     render();
-    window.requestAnimationFrame(() => {
-      document.getElementById("importSuccessFeedback")?.scrollIntoView({ block: "center", behavior: "smooth" });
-    });
+    scrollImportFeedbackIntoView();
+}
+
+function scrollImportFeedbackIntoView() {
+  window.requestAnimationFrame(() => {
+    document.getElementById("importSuccessFeedback")?.scrollIntoView({ block: "center", behavior: "smooth" });
   });
 }
 

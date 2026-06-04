@@ -3,6 +3,7 @@ import { inferColumns } from "./csv.js";
 import { DEFAULT_ACCOUNT_ID, getAccountStorageKey } from "./accounts.js";
 
 const STORAGE_KEY = "goodhr.workbench.v1";
+const COMPACT_RESPONSES_VERSION = 1;
 
 export function createId(prefix = "project") {
   return `${prefix}-${crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)}`;
@@ -40,7 +41,11 @@ export function loadState(accountId = DEFAULT_ACCOUNT_ID) {
 
 export function saveState(state, accountId = state?.accountId || DEFAULT_ACCOUNT_ID) {
   state.accountId = accountId;
-  localStorage.setItem(getAccountStorageKey(accountId), JSON.stringify(state));
+  try {
+    localStorage.setItem(getAccountStorageKey(accountId), JSON.stringify(serializeStateForStorage(state)));
+  } catch (error) {
+    throw new Error(`Nie udało się zapisać ankiet w przeglądarce. Dane są zbyt duże albo pamięć lokalna jest pełna. ${error.message || ""}`.trim());
+  }
 }
 
 export function getCurrentProject(state) {
@@ -104,6 +109,47 @@ function cloneSampleProject(accountId) {
   return normalizeProject(JSON.parse(JSON.stringify(sampleProject)), accountId);
 }
 
+function serializeStateForStorage(state) {
+  return {
+    ...state,
+    projects: (state.projects || []).map(serializeProjectForStorage)
+  };
+}
+
+function serializeProjectForStorage(project) {
+  const responses = Array.isArray(project.responses) ? project.responses : [];
+  const columnNames = getStorageColumnNames(project, responses);
+  const serialized = {
+    ...project,
+    compactResponses: {
+      version: COMPACT_RESPONSES_VERSION,
+      columns: columnNames,
+      rows: responses.map((row) => columnNames.map((name) => row[name] ?? ""))
+    }
+  };
+  delete serialized.responses;
+  return serialized;
+}
+
+function getStorageColumnNames(project, responses) {
+  const names = [];
+  const seen = new Set();
+  (project.schema?.columns || []).forEach((column) => {
+    const name = column?.name;
+    if (!name || seen.has(name)) return;
+    seen.add(name);
+    names.push(name);
+  });
+  responses.forEach((row) => {
+    Object.keys(row || {}).forEach((name) => {
+      if (seen.has(name)) return;
+      seen.add(name);
+      names.push(name);
+    });
+  });
+  return names;
+}
+
 function createEmptyProject(accountId = DEFAULT_ACCOUNT_ID) {
   return normalizeProject({
     id: "empty-project",
@@ -128,10 +174,11 @@ function getLegacyStateForDefaultAccount(accountId) {
 }
 
 function normalizeProject(project, accountId = DEFAULT_ACCOUNT_ID) {
-  const responses = Array.isArray(project.responses) ? project.responses : [];
+  const responses = inflateProjectResponses(project);
   const schema = normalizeSchema(project.schema, responses);
+  const { compactResponses, ...projectWithoutCompactResponses } = project;
   return {
-    ...project,
+    ...projectWithoutCompactResponses,
     ownerAccountId: project.ownerAccountId || accountId,
     sourceFile: project.sourceFile || project.importSource || project.wave || "ręcznie utworzona ankieta",
     status: project.status || "oddzielna ankieta",
@@ -143,6 +190,20 @@ function normalizeProject(project, accountId = DEFAULT_ACCOUNT_ID) {
     schema,
     responses
   };
+}
+
+function inflateProjectResponses(project) {
+  if (Array.isArray(project.responses)) return project.responses;
+  const compact = project.compactResponses;
+  if (!compact || !Array.isArray(compact.columns) || !Array.isArray(compact.rows)) return [];
+
+  return compact.rows.map((values) => {
+    const row = {};
+    compact.columns.forEach((name, index) => {
+      row[name] = Array.isArray(values) ? values[index] ?? "" : "";
+    });
+    return row;
+  });
 }
 
 function normalizeSchema(schema, responses) {

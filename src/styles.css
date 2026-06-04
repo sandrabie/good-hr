@@ -507,6 +507,18 @@ input[type="file"] {
   background: #eefaf6;
 }
 
+.import-success.info {
+  border-color: #b9d2e7;
+  border-left-color: var(--blue);
+  background: #eef6fb;
+}
+
+.import-success.error {
+  border-color: #efb8aa;
+  border-left-color: var(--coral);
+  background: #fff2ee;
+}
+
 .import-success strong,
 .import-success p {
   margin: 0;
