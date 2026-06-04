@@ -324,7 +324,7 @@ function renderImportFeedback() {
   if (!importFeedback) return "";
 
   return `
-    <div class="import-success" role="status">
+    <div id="importSuccessFeedback" class="import-success" role="status">
       <div>
         <strong>${escapeHtml(importFeedback.title)}</strong>
         <p>${escapeHtml(importFeedback.text)}</p>
@@ -662,8 +662,6 @@ function renderImport(project) {
         </div>
       </div>
 
-      ${renderImportFeedback()}
-
       <div class="grid wide-right">
         <div class="panel">
           <div class="form-grid">
@@ -706,6 +704,7 @@ function renderImport(project) {
                 <button class="button" id="saveImportTemplate" ${rows.length ? "" : "disabled"}>Zapisz szablon</button>
               </div>
             </div>
+            ${renderImportFeedback()}
             ${rows.length ? `
               <div class="import-summary">
                 <span class="eyebrow">Gotowe do importu</span>
@@ -3556,6 +3555,9 @@ function bindImportEvents() {
     activeView = "import";
     toast(`Zaimportowano dane ankiety: ${project.name} (${responses.length} odpowiedzi).`);
     render();
+    window.requestAnimationFrame(() => {
+      document.getElementById("importSuccessFeedback")?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
   });
 }
 
