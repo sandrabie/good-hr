@@ -2482,6 +2482,9 @@ function addReportSlideFromSelectedTemplate(project, root = app) {
   upsertProject(state, project);
   toast(`Dodano slajd: ${slide.title || "Nowy slajd"}.`);
   render();
+  window.setTimeout(() => {
+    document.getElementById(`slide-${slide.id}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, 0);
 }
 
 function deleteReportSlideById(project, slideId) {
@@ -2492,8 +2495,9 @@ function deleteReportSlideById(project, slideId) {
     return;
   }
 
+  const deletedIndex = slides.findIndex((item) => item.id === slideId);
   project.reportDeck.slides = slides.filter((item) => item.id !== slideId);
-  const nextSlide = project.reportDeck.slides[0] || null;
+  const nextSlide = project.reportDeck.slides[Math.min(deletedIndex, project.reportDeck.slides.length - 1)] || null;
   activeReportSlideId = nextSlide?.id || "";
   if (!getVisibleReportSlides(project).length) reportPresentationMode = false;
   upsertProject(state, project);
