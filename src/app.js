@@ -38,6 +38,7 @@ let reportPresentationMode = false;
 let presentationSlideIndex = 0;
 let lastToastMessage = "";
 let toastTimer = 0;
+let importFeedback = null;
 
 function loadOllamaSettings() {
   try {
@@ -316,6 +317,23 @@ function renderDashboard(project) {
         ${renderAiThemeCards(aiInsights.themes.slice(0, 4))}
       </div>
     </section>
+  `;
+}
+
+function renderImportFeedback() {
+  if (!importFeedback) return "";
+
+  return `
+    <div class="import-success" role="status">
+      <div>
+        <strong>${escapeHtml(importFeedback.title)}</strong>
+        <p>${escapeHtml(importFeedback.text)}</p>
+      </div>
+      <div class="actions">
+        <button class="primary" data-nav-target="analysis">Przejdź do wyników</button>
+        <button class="ghost small" data-dismiss-import-feedback>Zamknij</button>
+      </div>
+    </div>
   `;
 }
 
@@ -644,6 +662,8 @@ function renderImport(project) {
         </div>
       </div>
 
+      ${renderImportFeedback()}
+
       <div class="grid wide-right">
         <div class="panel">
           <div class="form-grid">
@@ -838,8 +858,9 @@ function getImportWarnings(draft) {
   const questionColumns = columns.filter((column) => column.type === "question_text");
   const answerColumns = columns.filter((column) => ["answer_text", "answer_value", "comment", "scale"].includes(column.type));
   const respondentColumns = columns.filter((column) => column.type === "response_id");
+  const longFormatImport = looksLikeLongFormatImport(columns);
 
-  if (!questionColumns.length) {
+  if (longFormatImport && !questionColumns.length) {
     warnings.push({
       level: "warn",
       title: "Brakuje kolumny pytania",
@@ -884,6 +905,11 @@ function getImportWarnings(draft) {
   });
 
   return warnings;
+}
+
+function looksLikeLongFormatImport(columns) {
+  const longFormatTypes = new Set(["answer_text", "answer_value", "question_id", "question_type", "question_category"]);
+  return (columns || []).some((column) => longFormatTypes.has(column.type));
 }
 
 function looksLikeQuestionText(value) {
@@ -3174,6 +3200,11 @@ function bindShellEvents() {
     });
   });
 
+  app.querySelector("[data-dismiss-import-feedback]")?.addEventListener("click", () => {
+    importFeedback = null;
+    render();
+  });
+
   app.querySelector("#projectSelect")?.addEventListener("change", (event) => {
     state.currentProjectId = event.target.value;
     saveState(state);
@@ -3418,6 +3449,7 @@ function bindImportEvents() {
       sourceKind: app.querySelector("#importSourceKind")?.value || getSourceKindFromFile(file.name),
       sourceFile: file.name
     };
+    importFeedback = null;
     toast(`Odczytano ${rows.length} rekordów.`);
     render();
   });
@@ -3477,6 +3509,7 @@ function bindImportEvents() {
           sourceKind: "CSV",
           sourceFile: file
         };
+        importFeedback = null;
         toast(`Wczytano przykład: ${sample?.name || file}.`);
         render();
       } catch (error) {
@@ -3514,8 +3547,13 @@ function bindImportEvents() {
     };
 
     upsertProject(state, project);
+    importFeedback = {
+      projectId: project.id,
+      title: "Dane ankiety zostały zaimportowane",
+      text: `Utworzono ankietę "${project.name}" z ${responses.length} odpowiedziami. Możesz przejść do wyników albo wczytać kolejny plik.`
+    };
     importDraft = null;
-    activeView = "dashboard";
+    activeView = "import";
     toast(`Zaimportowano dane ankiety: ${project.name} (${responses.length} odpowiedzi).`);
     render();
   });
