@@ -423,11 +423,11 @@ function renderProjects() {
                 <td><span class="pill ${project.id === state.currentProjectId ? "teal" : ""}">${escapeHtml(project.status || "roboczy")}</span></td>
                 <td>${project.responses?.length || 0}</td>
                 <td>
-                  <button class="button" data-open-project="${project.id}">Otwórz dashboard</button>
-                  <button class="danger" data-delete-project="${project.id}">Usuń</button>
+                  <button class="button" data-open-project="${escapeAttribute(project.id)}">Otwórz dashboard</button>
+                  <button class="danger" data-delete-project="${escapeAttribute(project.id)}">Usuń</button>
                 </td>
               </tr>
-            `).join("")}
+            `).join("") || `<tr><td colspan="7">Brak zapisanych ankiet. Przejdź do importu, żeby dodać pierwszy plik.</td></tr>`}
           </tbody>
         </table>
       </div>

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createLocalAccount, getCurrentAccount, switchAccount } from "../src/accounts.js";
-import { loadState, upsertProject } from "../src/store.js";
+import { getCurrentProject, loadState, removeProject, upsertProject } from "../src/store.js";
 
 class MemoryStorage {
   constructor() {
@@ -47,4 +47,20 @@ test("local accounts keep separate project histories", () => {
   assert.equal(getCurrentAccount().id, second.id);
   assert.ok(firstState.projects.some((project) => project.id === "project-only-first-account"));
   assert.ok(!secondState.projects.some((project) => project.id === "project-only-first-account"));
+});
+
+test("deleting the last survey keeps the project list empty", () => {
+  globalThis.localStorage = new MemoryStorage();
+
+  const account = createLocalAccount({ name: "Konto testowe", email: "delete@example.com" });
+  const state = loadState(account.id);
+  const projectId = state.currentProjectId;
+
+  removeProject(state, projectId);
+  const reloaded = loadState(account.id);
+  const currentProject = getCurrentProject(reloaded);
+
+  assert.equal(reloaded.projects.length, 0);
+  assert.equal(reloaded.currentProjectId, "");
+  assert.equal(currentProject.status, "brak danych");
 });

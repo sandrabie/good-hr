@@ -19,15 +19,16 @@ export function loadState(accountId = DEFAULT_ACCOUNT_ID) {
 
   try {
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed.projects) || parsed.projects.length === 0) {
+    if (!Array.isArray(parsed.projects)) {
       throw new Error("Invalid store");
     }
     parsed.accountId = accountId;
     parsed.importTemplates = Array.isArray(parsed.importTemplates) ? parsed.importTemplates : [];
     parsed.projects = parsed.projects.map((project) => normalizeProject(project, accountId));
-    if (!parsed.projects.some((project) => project.id === parsed.currentProjectId)) {
+    if (parsed.projects.length && !parsed.projects.some((project) => project.id === parsed.currentProjectId)) {
       parsed.currentProjectId = parsed.projects[0].id;
     }
+    if (!parsed.projects.length) parsed.currentProjectId = "";
     saveState(parsed);
     return parsed;
   } catch {
@@ -43,7 +44,7 @@ export function saveState(state, accountId = state?.accountId || DEFAULT_ACCOUNT
 }
 
 export function getCurrentProject(state) {
-  return state.projects.find((project) => project.id === state.currentProjectId) || state.projects[0];
+  return state.projects.find((project) => project.id === state.currentProjectId) || state.projects[0] || createEmptyProject(state?.accountId);
 }
 
 export function upsertProject(state, project) {
@@ -61,11 +62,8 @@ export function upsertProject(state, project) {
 
 export function removeProject(state, projectId) {
   state.projects = state.projects.filter((project) => project.id !== projectId);
-  if (state.projects.length === 0) {
-    state.projects = [cloneSampleProject(state.accountId || DEFAULT_ACCOUNT_ID)];
-  }
   if (!state.projects.some((project) => project.id === state.currentProjectId)) {
-    state.currentProjectId = state.projects[0].id;
+    state.currentProjectId = state.projects[0]?.id || "";
   }
   saveState(state);
 }
@@ -104,6 +102,24 @@ function createDefaultState(accountId) {
 
 function cloneSampleProject(accountId) {
   return normalizeProject(JSON.parse(JSON.stringify(sampleProject)), accountId);
+}
+
+function createEmptyProject(accountId = DEFAULT_ACCOUNT_ID) {
+  return normalizeProject({
+    id: "empty-project",
+    client: "Brak ankiet",
+    name: "Zaimportuj dane",
+    wave: "",
+    sourceFile: "brak danych",
+    sourceKind: "Auto",
+    status: "brak danych",
+    createdAt: new Date().toISOString(),
+    thresholds: { numeric: 5, comments: 10 },
+    projectGroup: "Brak ankiet",
+    reportVersions: [],
+    schema: { columns: [] },
+    responses: []
+  }, accountId);
 }
 
 function getLegacyStateForDefaultAccount(accountId) {
