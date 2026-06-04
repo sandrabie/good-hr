@@ -483,6 +483,12 @@ input[type="file"] {
   white-space: nowrap;
 }
 
+.project-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .template-controls {
   display: grid;
   gap: 10px;

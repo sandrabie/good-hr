@@ -39,6 +39,7 @@ let presentationSlideIndex = 0;
 let lastToastMessage = "";
 let toastTimer = 0;
 let importFeedback = null;
+let pendingDeleteProjectId = "";
 
 function loadOllamaSettings() {
   try {
@@ -422,9 +423,14 @@ function renderProjects() {
                 <td>${escapeHtml(project.sourceFile || "-")}</td>
                 <td><span class="pill ${project.id === state.currentProjectId ? "teal" : ""}">${escapeHtml(project.status || "roboczy")}</span></td>
                 <td>${project.responses?.length || 0}</td>
-                <td>
+                <td class="project-actions">
                   <button class="button" data-open-project="${escapeAttribute(project.id)}">Otwórz dashboard</button>
-                  <button class="danger" data-delete-project="${escapeAttribute(project.id)}">Usuń</button>
+                  ${pendingDeleteProjectId === project.id ? `
+                    <button class="danger" data-confirm-delete-project="${escapeAttribute(project.id)}">Potwierdź usunięcie</button>
+                    <button class="button" data-cancel-delete-project>Nie usuwaj</button>
+                  ` : `
+                    <button class="danger" data-request-delete-project="${escapeAttribute(project.id)}">Usuń</button>
+                  `}
                 </td>
               </tr>
             `).join("") || `<tr><td colspan="7">Brak zapisanych ankiet. Przejdź do importu, żeby dodać pierwszy plik.</td></tr>`}
@@ -3181,6 +3187,7 @@ function activateAccount(account, view = "dashboard") {
   };
   activeReportSlideId = "";
   reportPresentationMode = false;
+  pendingDeleteProjectId = "";
   render();
 }
 
@@ -3188,6 +3195,7 @@ function bindShellEvents() {
   app.querySelectorAll("[data-nav]").forEach((button) => {
     button.addEventListener("click", () => {
       activeView = button.dataset.nav;
+      if (activeView !== "projects") pendingDeleteProjectId = "";
       render();
     });
   });
@@ -3195,6 +3203,7 @@ function bindShellEvents() {
   app.querySelectorAll("[data-nav-target]").forEach((button) => {
     button.addEventListener("click", () => {
       activeView = button.dataset.navTarget;
+      if (activeView !== "projects") pendingDeleteProjectId = "";
       render();
     });
   });
@@ -3214,6 +3223,7 @@ function bindShellEvents() {
     button.addEventListener("click", () => {
       state.currentProjectId = button.dataset.openProject;
       saveState(state);
+      pendingDeleteProjectId = "";
       activeView = "dashboard";
       render();
     });
@@ -3402,12 +3412,30 @@ function bindTaxonomyEvents(project) {
 }
 
 function bindProjectsEvents() {
-  app.querySelectorAll("[data-delete-project]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const projectToDelete = state.projects.find((item) => item.id === button.dataset.deleteProject);
+  app.querySelectorAll("[data-request-delete-project]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      pendingDeleteProjectId = button.dataset.requestDeleteProject;
+      toast("Kliknij „Potwierdź usunięcie”, żeby usunąć ankietę.");
+      render();
+    });
+  });
+
+  app.querySelectorAll("[data-cancel-delete-project]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      pendingDeleteProjectId = "";
+      render();
+    });
+  });
+
+  app.querySelectorAll("[data-confirm-delete-project]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      const projectToDelete = state.projects.find((item) => item.id === button.dataset.confirmDeleteProject);
       if (!projectToDelete) return;
-      if (!confirm(`Usunąć ankietę "${projectToDelete.name}" z lokalnego zapisu?`)) return;
-      removeProject(state, button.dataset.deleteProject);
+      removeProject(state, button.dataset.confirmDeleteProject);
+      pendingDeleteProjectId = "";
       toast(`Usunięto ankietę: ${projectToDelete.name}.`);
       render();
     });
