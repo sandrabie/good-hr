@@ -36,6 +36,8 @@ const COMMENT_RENDER_LIMIT = 50;
 let activeReportSlideId = "";
 let reportPresentationMode = false;
 let presentationSlideIndex = 0;
+let lastToastMessage = "";
+let toastTimer = 0;
 
 function loadOllamaSettings() {
   try {
@@ -172,6 +174,7 @@ function render() {
 
   bindShellEvents();
   bindViewEvents(project);
+  flushToast();
 }
 
 function renderAuth() {
@@ -248,6 +251,7 @@ function renderAuth() {
   `;
 
   bindAuthEvents();
+  flushToast();
 }
 
 function renderSidebarAccount(account) {
@@ -2468,6 +2472,35 @@ function getVisibleReportSlides(project) {
   return (project.reportDeck?.slides || []).filter((slide) => !slide.hidden);
 }
 
+function addReportSlideFromSelectedTemplate(project, root = app) {
+  project.reportDeck = project.reportDeck || buildReportDeck(project);
+  project.reportDeck.slides = Array.isArray(project.reportDeck.slides) ? project.reportDeck.slides : [];
+  const template = root.querySelector("#reportSlideTemplate")?.value || "blank";
+  const slide = createReportSlideFromTemplate(project, template, project.reportDeck.slides.length + 1);
+  project.reportDeck.slides.push(slide);
+  activeReportSlideId = slide.id;
+  upsertProject(state, project);
+  toast(`Dodano slajd: ${slide.title || "Nowy slajd"}.`);
+  render();
+}
+
+function deleteReportSlideById(project, slideId) {
+  const slides = project.reportDeck?.slides || [];
+  const slide = slides.find((item) => item.id === slideId);
+  if (!slide) {
+    toast("Nie znaleziono slajdu do usunięcia.");
+    return;
+  }
+
+  project.reportDeck.slides = slides.filter((item) => item.id !== slideId);
+  const nextSlide = project.reportDeck.slides[0] || null;
+  activeReportSlideId = nextSlide?.id || "";
+  if (!getVisibleReportSlides(project).length) reportPresentationMode = false;
+  upsertProject(state, project);
+  toast(`Usunięto slajd: ${slide.title || "Slajd"}.`);
+  render();
+}
+
 function renderReportPropertiesPanel(project, activeSlide) {
   const deck = project.reportDeck;
   const hasDeck = Boolean(deck?.slides?.length);
@@ -3337,13 +3370,14 @@ function bindTaxonomyEvents(project) {
 function bindProjectsEvents() {
   app.querySelectorAll("[data-delete-project]").forEach((button) => {
     button.addEventListener("click", () => {
-      if (!confirm("Usunąć projekt z lokalnego zapisu?")) return;
+      const projectToDelete = state.projects.find((item) => item.id === button.dataset.deleteProject);
+      if (!projectToDelete) return;
+      if (!confirm(`Usunąć ankietę "${projectToDelete.name}" z lokalnego zapisu?`)) return;
       removeProject(state, button.dataset.deleteProject);
-      toast("Projekt usunięty lokalnie.");
+      toast(`Usunięto ankietę: ${projectToDelete.name}.`);
       render();
     });
   });
-
 }
 
 function bindImportEvents() {
@@ -3478,7 +3512,7 @@ function bindImportEvents() {
     upsertProject(state, project);
     importDraft = null;
     activeView = "dashboard";
-    toast("Ankieta została utworzona z CSV.");
+    toast(`Zaimportowano dane ankiety: ${project.name} (${responses.length} odpowiedzi).`);
     render();
   });
 }
@@ -3588,14 +3622,7 @@ function bindReportPropertiesPanelEvents(project) {
   });
 
   panel.querySelector("#addReportSlide")?.addEventListener("click", () => {
-    project.reportDeck = project.reportDeck || buildReportDeck(project);
-    const template = panel.querySelector("#reportSlideTemplate")?.value || "blank";
-    const slide = createReportSlideFromTemplate(project, template, project.reportDeck.slides.length + 1);
-    project.reportDeck.slides.push(slide);
-    activeReportSlideId = slide.id;
-    upsertProject(state, project);
-    toast("Dodano slajd z wybranego szablonu.");
-    render();
+    addReportSlideFromSelectedTemplate(project, panel);
   });
 
   panel.querySelector("#openPresentationMode")?.addEventListener("click", () => {
@@ -3656,12 +3683,7 @@ function bindReportPropertiesPanelEvents(project) {
 
   panel.querySelectorAll("[data-delete-report-slide]").forEach((button) => {
     button.addEventListener("click", () => {
-      if (!project.reportDeck?.slides?.length) return;
-      project.reportDeck.slides = project.reportDeck.slides.filter((slide) => slide.id !== button.dataset.deleteReportSlide);
-      if (activeReportSlideId === button.dataset.deleteReportSlide) activeReportSlideId = project.reportDeck.slides[0]?.id || "";
-      upsertProject(state, project);
-      toast("Slajd usunięty.");
-      render();
+      deleteReportSlideById(project, button.dataset.deleteReportSlide);
     });
   });
 
@@ -3783,14 +3805,7 @@ function bindReportEvents(project) {
   });
 
   app.querySelector("#addReportSlide")?.addEventListener("click", () => {
-    project.reportDeck = project.reportDeck || buildReportDeck(project);
-    const template = app.querySelector("#reportSlideTemplate")?.value || "blank";
-    const slide = createReportSlideFromTemplate(project, template, project.reportDeck.slides.length + 1);
-    project.reportDeck.slides.push(slide);
-    activeReportSlideId = slide.id;
-    upsertProject(state, project);
-    toast("Dodano slajd z wybranego szablonu.");
-    render();
+    addReportSlideFromSelectedTemplate(project, app);
   });
 
   app.querySelector("#openPresentationMode")?.addEventListener("click", () => {
@@ -3923,12 +3938,7 @@ function bindReportEvents(project) {
 
   app.querySelectorAll("[data-delete-report-slide]").forEach((button) => {
     button.addEventListener("click", () => {
-      if (!project.reportDeck?.slides?.length) return;
-      project.reportDeck.slides = project.reportDeck.slides.filter((slide) => slide.id !== button.dataset.deleteReportSlide);
-      if (activeReportSlideId === button.dataset.deleteReportSlide) activeReportSlideId = project.reportDeck.slides[0]?.id || "";
-      upsertProject(state, project);
-      toast("Slajd usunięty.");
-      render();
+      deleteReportSlideById(project, button.dataset.deleteReportSlide);
     });
   });
 
@@ -5593,11 +5603,20 @@ function downloadText(filename, text, type = "text/plain;charset=utf-8") {
 }
 
 function toast(message) {
+  lastToastMessage = String(message || "");
+  flushToast();
+}
+
+function flushToast() {
   const element = document.getElementById("toast");
-  if (!element) return;
-  element.textContent = message;
+  if (!element || !lastToastMessage) return;
+  element.textContent = lastToastMessage;
   element.classList.add("show");
-  window.setTimeout(() => element.classList.remove("show"), 2600);
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    element.classList.remove("show");
+    lastToastMessage = "";
+  }, 2600);
 }
 
 function typeLabel(type) {
