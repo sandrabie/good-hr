@@ -5,6 +5,10 @@ import { DEFAULT_ACCOUNT_ID, getAccountStorageKey } from "./accounts.js";
 const STORAGE_KEY = "goodhr.workbench.v1";
 const COMPACT_RESPONSES_VERSION = 1;
 
+let remoteSaveHandler = null;
+let lastRemoteSavePromise = Promise.resolve();
+let lastRemoteSaveError = null;
+
 export function createId(prefix = "project") {
   return `${prefix}-${crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)}`;
 }
@@ -20,18 +24,13 @@ export function loadState(accountId = DEFAULT_ACCOUNT_ID) {
 
   try {
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed.projects)) {
-      throw new Error("Invalid store");
+    const normalized = normalizeLoadedState(parsed, accountId);
+    try {
+      saveState(normalized);
+    } catch {
+      // Keep the loaded data in memory even if the browser storage is already full.
     }
-    parsed.accountId = accountId;
-    parsed.importTemplates = Array.isArray(parsed.importTemplates) ? parsed.importTemplates : [];
-    parsed.projects = parsed.projects.map((project) => normalizeProject(project, accountId));
-    if (parsed.projects.length && !parsed.projects.some((project) => project.id === parsed.currentProjectId)) {
-      parsed.currentProjectId = parsed.projects[0].id;
-    }
-    if (!parsed.projects.length) parsed.currentProjectId = "";
-    saveState(parsed);
-    return parsed;
+    return normalized;
   } catch {
     const state = createDefaultState(accountId);
     saveState(state);
@@ -41,11 +40,60 @@ export function loadState(accountId = DEFAULT_ACCOUNT_ID) {
 
 export function saveState(state, accountId = state?.accountId || DEFAULT_ACCOUNT_ID) {
   state.accountId = accountId;
+  const serializedState = serializeStateForStorage(state);
+  let localError = null;
+
   try {
-    localStorage.setItem(getAccountStorageKey(accountId), JSON.stringify(serializeStateForStorage(state)));
+    removeDuplicatedLegacyState(accountId);
+    localStorage.setItem(getAccountStorageKey(accountId), JSON.stringify(serializedState));
   } catch (error) {
-    throw new Error(`Nie udało się zapisać ankiet w przeglądarce. Dane są zbyt duże albo pamięć lokalna jest pełna. ${error.message || ""}`.trim());
+    localError = error;
   }
+
+  if (remoteSaveHandler) {
+    queueRemoteSave(serializedState, accountId);
+  }
+
+  if (localError && !remoteSaveHandler) {
+    throw new Error(`Nie udało się zapisać ankiet w przeglądarce. Dane są zbyt duże albo pamięć lokalna jest pełna. ${localError.message || ""}`.trim());
+  }
+
+  return serializedState;
+}
+
+export function configureRemoteStatePersistence(handler) {
+  remoteSaveHandler = typeof handler === "function" ? handler : null;
+  lastRemoteSavePromise = Promise.resolve();
+  lastRemoteSaveError = null;
+}
+
+export function clearRemoteStatePersistence() {
+  remoteSaveHandler = null;
+  lastRemoteSavePromise = Promise.resolve();
+  lastRemoteSaveError = null;
+}
+
+export async function waitForRemoteStateSave() {
+  await lastRemoteSavePromise;
+  if (!lastRemoteSaveError) return;
+  const error = lastRemoteSaveError;
+  lastRemoteSaveError = null;
+  throw error;
+}
+
+export function serializeStateSnapshot(state) {
+  return serializeStateForStorage(state);
+}
+
+export function hydrateStoredState(accountId, storedState) {
+  const normalized = normalizeLoadedState(storedState || {}, accountId);
+  try {
+    removeDuplicatedLegacyState(accountId);
+    localStorage.setItem(getAccountStorageKey(accountId), JSON.stringify(serializeStateForStorage(normalized)));
+  } catch {
+    // Supabase is the source of truth in this path; local cache is optional.
+  }
+  return normalized;
 }
 
 export function getCurrentProject(state) {
@@ -119,16 +167,56 @@ function serializeStateForStorage(state) {
 function serializeProjectForStorage(project) {
   const responses = Array.isArray(project.responses) ? project.responses : [];
   const columnNames = getStorageColumnNames(project, responses);
+  const packed = packResponseRows(responses, columnNames);
   const serialized = {
     ...project,
     compactResponses: {
       version: COMPACT_RESPONSES_VERSION,
       columns: columnNames,
-      rows: responses.map((row) => columnNames.map((name) => row[name] ?? ""))
+      values: packed.values,
+      rows: packed.rows
     }
   };
   delete serialized.responses;
   return serialized;
+}
+
+function queueRemoteSave(serializedState, accountId) {
+  lastRemoteSaveError = null;
+  lastRemoteSavePromise = Promise.resolve()
+    .then(() => remoteSaveHandler(serializedState, accountId))
+    .catch((error) => {
+      lastRemoteSaveError = error;
+    });
+}
+
+function normalizeLoadedState(parsed, accountId) {
+  if (!parsed || !Array.isArray(parsed.projects)) {
+    throw new Error("Invalid store");
+  }
+  parsed.accountId = accountId;
+  parsed.importTemplates = Array.isArray(parsed.importTemplates) ? parsed.importTemplates : [];
+  parsed.projects = parsed.projects.map((project) => normalizeProject(project, accountId));
+  if (parsed.projects.length && !parsed.projects.some((project) => project.id === parsed.currentProjectId)) {
+    parsed.currentProjectId = parsed.projects[0].id;
+  }
+  if (!parsed.projects.length) parsed.currentProjectId = "";
+  return parsed;
+}
+
+function packResponseRows(responses, columnNames) {
+  const values = [];
+  const valueIndex = new Map();
+  const rows = responses.map((row) => columnNames.map((name) => {
+    const value = row[name] ?? "";
+    const key = `${typeof value}\u0000${String(value)}`;
+    if (!valueIndex.has(key)) {
+      valueIndex.set(key, values.length);
+      values.push(value);
+    }
+    return valueIndex.get(key);
+  }));
+  return { values, rows };
 }
 
 function getStorageColumnNames(project, responses) {
@@ -173,13 +261,18 @@ function getLegacyStateForDefaultAccount(accountId) {
   return localStorage.getItem(STORAGE_KEY) || "";
 }
 
+function removeDuplicatedLegacyState(accountId) {
+  if (accountId !== DEFAULT_ACCOUNT_ID) return;
+  localStorage.removeItem(STORAGE_KEY);
+}
+
 function normalizeProject(project, accountId = DEFAULT_ACCOUNT_ID) {
   const responses = inflateProjectResponses(project);
   const schema = normalizeSchema(project.schema, responses);
   const { compactResponses, ...projectWithoutCompactResponses } = project;
   return {
     ...projectWithoutCompactResponses,
-    ownerAccountId: project.ownerAccountId || accountId,
+    ownerAccountId: accountId,
     sourceFile: project.sourceFile || project.importSource || project.wave || "ręcznie utworzona ankieta",
     status: project.status || "oddzielna ankieta",
     thresholds: project.thresholds || { numeric: 5, comments: 10 },
@@ -187,8 +280,16 @@ function normalizeProject(project, accountId = DEFAULT_ACCOUNT_ID) {
     projectGroup: project.projectGroup || project.name || "Ankieta",
     reportVersions: Array.isArray(project.reportVersions) ? project.reportVersions : [],
     aiSummaries: project.aiSummaries && typeof project.aiSummaries === "object" ? project.aiSummaries : {},
+    privacyReview: normalizePrivacyReview(project.privacyReview),
     schema,
     responses
+  };
+}
+
+function normalizePrivacyReview(review) {
+  return {
+    checkedItems: review?.checkedItems && typeof review.checkedItems === "object" ? review.checkedItems : {},
+    sensitiveItems: review?.sensitiveItems && typeof review.sensitiveItems === "object" ? review.sensitiveItems : {}
   };
 }
 
@@ -196,11 +297,13 @@ function inflateProjectResponses(project) {
   if (Array.isArray(project.responses)) return project.responses;
   const compact = project.compactResponses;
   if (!compact || !Array.isArray(compact.columns) || !Array.isArray(compact.rows)) return [];
+  const dictionary = Array.isArray(compact.values) ? compact.values : null;
 
   return compact.rows.map((values) => {
     const row = {};
     compact.columns.forEach((name, index) => {
-      row[name] = Array.isArray(values) ? values[index] ?? "" : "";
+      const compactValue = Array.isArray(values) ? values[index] : "";
+      row[name] = dictionary ? dictionary[compactValue] ?? "" : compactValue ?? "";
     });
     return row;
   });

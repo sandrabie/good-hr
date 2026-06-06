@@ -1,7 +1,7 @@
-import { getCurrentProject, loadState, saveState, upsertProject, removeProject, exportProject, importProjectFile, createId } from "./store.js";
-import { createLocalAccount, getAccounts, getCurrentAccount, loginLocalAccount, logoutAccount, switchAccount } from "./accounts.js";
+import { clearRemoteStatePersistence, configureRemoteStatePersistence, getCurrentProject, hydrateStoredState, loadState, saveState, serializeStateSnapshot, upsertProject, removeProject, exportProject, importProjectFile, createId, waitForRemoteStateSave } from "./store.js";
+import { clearSupabaseBrowserConfig, getSupabaseConfig, getSupabaseSession, initSupabase, loadSupabaseWorkspace, onSupabaseAuthStateChange, saveSupabaseBrowserConfig, saveSupabaseWorkspace, sendPasswordResetEmail, signInWithPassword, signOutSupabase, signUpWithPassword, updateSupabasePassword } from "./supabaseClient.js";
 import { parseCSV, parseTabularFile, inferColumns } from "./csv.js";
-import { buildReportDraft, calculateEnps, collectComments, detectPii, getAiAnswerInsights, getColumns, getHeatmap, getMetricSummary, getQuestionStats, getSegmentComparison, getTopics, redactText } from "./analytics.js";
+import { calculateEnps, collectComments, detectPii, getAiAnswerInsights, getColumns, getHeatmap, getMetricSummary, getQuestionStats, getSegmentComparison, getTopics, redactText } from "./analytics.js";
 import { sampleCsvFiles } from "./data.js";
 
 const viewMeta = {
@@ -12,11 +12,19 @@ const viewMeta = {
   taxonomy: ["Taksonomia", "Robocze tagi AI i końcowe kategorie konsultanta."],
   privacy: ["Kontrola danych", "PII, małe grupy i progi publikacji przed raportem."],
   report: ["Studio raportu", "Szkic narracji, dowody i eksport roboczy."],
-  account: ["Konto i projekty", "Lokalne konta, osobna historia projektów i przygotowanie pod Supabase."]
+  account: ["Konto i projekty", "Twoje zapisane ankiety, raporty i ustawienia."]
 };
 
-let currentAccount = getCurrentAccount();
-let state = currentAccount ? loadState(currentAccount.id) : null;
+let currentAccount = null;
+let state = null;
+let authReady = false;
+let supabaseConfigured = false;
+let supabaseConfigError = "";
+let authMode = "login";
+let authInProgress = false;
+let authFeedback = null;
+let passwordResetMode = false;
+let unsubscribeAuthState = null;
 let activeView = "dashboard";
 let importDraft = null;
 let analysisFilters = {
@@ -107,12 +115,220 @@ const reportInsertOptions = [
 ];
 const importColumnTypes = ["segment", "scale", "enps", "comment", "question_text", "question_type", "answer_text", "answer_value", "question_category", "question_id", "response_id", "ignore"];
 
-render();
+bootApp();
+
+async function bootApp() {
+  const redirectFeedback = readAuthRedirectFeedback();
+  renderAuthLoading();
+  try {
+    const setup = await initSupabase();
+    supabaseConfigured = setup.configured;
+    supabaseConfigError = setup.error || "";
+    authReady = true;
+
+    if (!setup.configured) {
+      clearRemoteStatePersistence();
+      currentAccount = null;
+      state = null;
+      render();
+      return;
+    }
+
+    if (unsubscribeAuthState) unsubscribeAuthState();
+    unsubscribeAuthState = onSupabaseAuthStateChange((session) => {
+      if (!session?.user) {
+        if (currentAccount) deactivateSupabaseAccount();
+        return;
+      }
+      if (session.user.id !== currentAccount?.id) {
+        activateSupabaseSession(session, "dashboard");
+      }
+    });
+
+    const session = await getSupabaseSession();
+    if (session?.user) {
+      passwordResetMode = redirectFeedback?.kind === "recovery";
+      await activateSupabaseSession(session, passwordResetMode ? "account" : "dashboard", false);
+      if (redirectFeedback?.level === "info") {
+        toast(redirectFeedback.title);
+      }
+    } else {
+      clearRemoteStatePersistence();
+      currentAccount = null;
+      state = null;
+      if (redirectFeedback?.kind === "recovery") authMode = "reset";
+      authFeedback = redirectFeedback || authFeedback;
+    }
+    cleanupAuthRedirectUrl(redirectFeedback);
+    render();
+  } catch (error) {
+    authReady = true;
+    supabaseConfigured = false;
+    supabaseConfigError = error.message || "Nie udało się uruchomić logowania Supabase.";
+    clearRemoteStatePersistence();
+    currentAccount = null;
+    state = null;
+    render();
+  }
+}
+
+function readAuthRedirectFeedback() {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search || "");
+  const hash = new URLSearchParams(String(window.location.hash || "").replace(/^#/, ""));
+  const type = params.get("type") || hash.get("type");
+  const error = params.get("error_description") || hash.get("error_description") || params.get("error") || hash.get("error");
+  if (error) {
+    return {
+      level: "error",
+      title: "Link potwierdzający nie zadziałał",
+      text: decodeAuthUrlText(error)
+    };
+  }
+  if (type === "recovery") {
+    return {
+      level: "info",
+      kind: "recovery",
+      title: "Możesz ustawić nowe hasło",
+      text: "Wpisz nowe hasło w panelu konta i zapisz zmianę."
+    };
+  }
+  if (params.has("code") || hash.has("access_token") || params.get("type") === "signup" || hash.get("type") === "signup") {
+    return {
+      level: "info",
+      kind: "signup",
+      title: "Adres e-mail został potwierdzony",
+      text: "Możesz teraz zalogować się do aplikacji. Jeśli sesja została utworzona automatycznie, aplikacja przejdzie od razu do Twojej przestrzeni."
+    };
+  }
+  return null;
+}
+
+function cleanupAuthRedirectUrl(feedback) {
+  if (!feedback || typeof window === "undefined" || !window.history?.replaceState) return;
+  window.history.replaceState({}, document.title, window.location.pathname || "/");
+}
+
+function decodeAuthUrlText(value) {
+  try {
+    return decodeURIComponent(String(value || "").replace(/\+/g, " "));
+  } catch {
+    return String(value || "Nie udało się potwierdzić adresu e-mail.");
+  }
+}
+
+function renderAuthLoading() {
+  app.innerHTML = `
+    <main class="auth-shell">
+      <section class="auth-card">
+        <div class="brand auth-brand">
+          <div class="mark">GH</div>
+          <div>
+            <strong>GoodHR Workbench</strong>
+            <span>ładowanie konta</span>
+          </div>
+        </div>
+        <div class="panel">
+          <h1>Sprawdzam sesję użytkownika</h1>
+          <p class="muted">Aplikacja ładuje konfigurację Supabase i historię ankiet przypisaną do konta.</p>
+        </div>
+      </section>
+      <div id="toast" class="toast" role="status"></div>
+    </main>
+  `;
+}
+
+async function activateSupabaseSession(session, view = "dashboard", shouldRender = true) {
+  if (!session?.user) {
+    deactivateSupabaseAccount();
+    return;
+  }
+
+  const account = accountFromSupabaseUser(session.user);
+  clearRemoteStatePersistence();
+  currentAccount = account;
+
+  try {
+    const remoteState = await loadSupabaseWorkspace(account.id);
+    state = remoteState ? hydrateStoredState(account.id, remoteState) : loadState(account.id);
+    configureRemoteStatePersistence((serializedState, accountId) => saveSupabaseWorkspace(accountId, serializedState));
+    if (!remoteState) {
+      saveState(state, account.id);
+      await waitForRemoteStateSave();
+    }
+    supabaseConfigError = "";
+  } catch (error) {
+    currentAccount = null;
+    state = null;
+    clearRemoteStatePersistence();
+    supabaseConfigError = formatSupabaseWorkspaceError(error);
+  }
+
+  activeView = currentAccount ? view : "dashboard";
+  resetWorkspaceUiState();
+  authReady = true;
+  if (shouldRender) render();
+}
+
+function deactivateSupabaseAccount() {
+  clearRemoteStatePersistence();
+  currentAccount = null;
+  state = null;
+  activeView = "dashboard";
+  passwordResetMode = false;
+  resetWorkspaceUiState();
+  render();
+}
+
+function accountFromSupabaseUser(user) {
+  const metadata = user.user_metadata || {};
+  const email = user.email || "";
+  return {
+    id: user.id,
+    provider: "supabase",
+    name: String(metadata.name || metadata.full_name || email.split("@")[0] || "Użytkownik").trim(),
+    email,
+    role: "Konsultant",
+    createdAt: user.created_at || "",
+    lastLoginAt: user.last_sign_in_at || ""
+  };
+}
+
+function resetWorkspaceUiState() {
+  analysisFilters = {
+    category: "__all",
+    question: "__all"
+  };
+  segmentCompareState = {
+    segmentColumn: "",
+    question: ""
+  };
+  activeReportSlideId = "";
+  reportPresentationMode = false;
+  pendingDeleteProjectId = "";
+  importDraft = null;
+  importInProgress = false;
+}
+
+function formatSupabaseWorkspaceError(error) {
+  const message = error?.message || "";
+  if (/goodhr_workspaces|relation|does not exist|schema cache/i.test(message)) {
+    return "Brakuje tabeli goodhr_workspaces w Supabase. Utwórz ją według instrukcji na ekranie konfiguracji.";
+  }
+  return message || "Nie udało się połączyć workspace użytkownika z Supabase.";
+}
 
 function render() {
-  currentAccount = getCurrentAccount();
+  if (!authReady) {
+    renderAuthLoading();
+    return;
+  }
   if (!currentAccount) {
-    renderAuth();
+    renderSupabaseAuth();
+    return;
+  }
+  if (passwordResetMode) {
+    renderPasswordResetOnly();
     return;
   }
   if (!state || state.accountId !== currentAccount.id) {
@@ -180,6 +396,235 @@ function render() {
   flushToast();
 }
 
+function renderPasswordResetOnly() {
+  app.innerHTML = `
+    <main class="auth-shell">
+      <section class="auth-card password-reset-card">
+        <div class="brand auth-brand">
+          <div class="mark">GH</div>
+          <div>
+            <strong>GoodHR Workbench</strong>
+            <span>reset hasła</span>
+          </div>
+        </div>
+        <div class="auth-intro">
+          <h1>Ustaw nowe hasło</h1>
+          <p>Link resetujący został przyjęty. Zanim przejdziesz do aplikacji, ustaw nowe hasło dla swojego konta.</p>
+        </div>
+        ${renderAuthFeedback()}
+        ${renderPasswordResetPanel()}
+      </section>
+      <div id="toast" class="toast" role="status"></div>
+    </main>
+  `;
+
+  bindSupabaseAccountEvents();
+  flushToast();
+}
+
+function renderSupabaseAuth() {
+  const config = getSupabaseConfig();
+  const isRegister = authMode === "register";
+  const isReset = authMode === "reset";
+  const authTitle = isReset ? "Zresetuj hasło" : isRegister ? "Utwórz konto GoodHR" : "Zaloguj się do GoodHR";
+  const formTitle = isReset ? "Reset hasła" : isRegister ? "Nowe konto" : "Logowanie";
+  const formHint = isReset
+    ? "Podaj e-mail konta. Wyślemy link, który pozwoli ustawić nowe hasło."
+    : isRegister
+      ? "Hasło powinno mieć co najmniej 6 znaków. Jeśli w Supabase włączysz potwierdzanie e-mail, konto aktywuje się po kliknięciu linku."
+      : "Podaj e-mail i hasło ustawione przy rejestracji.";
+
+  if (!supabaseConfigured) {
+    app.innerHTML = `
+      <main class="auth-shell">
+        <section class="auth-card setup-auth-card">
+          <div class="brand auth-brand">
+            <div class="mark">GH</div>
+            <div>
+              <strong>GoodHR Workbench</strong>
+              <span>konfiguracja Supabase</span>
+            </div>
+          </div>
+          <div class="auth-intro">
+            <h1>Połącz aplikację z Supabase</h1>
+            <p>Żeby włączyć prawdziwą rejestrację, logowanie i zapis ankiet na koncie użytkownika, dodaj dane publiczne projektu Supabase oraz tabelę workspace.</p>
+          </div>
+          ${renderAuthFeedback()}
+          ${supabaseConfigError ? `
+            <div class="import-success error" role="alert">
+              <div>
+                <strong>Konfiguracja wymaga uwagi</strong>
+                <p>${escapeHtml(supabaseConfigError)}</p>
+              </div>
+            </div>
+          ` : ""}
+          <div class="grid wide-left auth-setup-grid">
+            <div class="panel">
+              <div class="section-head">
+                <div>
+                  <h2>Dane projektu</h2>
+                  <p>Na Vercel ustaw env: <code>SUPABASE_URL</code> i <code>SUPABASE_ANON_KEY</code>. Lokalnie możesz wkleić je poniżej.</p>
+                </div>
+              </div>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="supabaseUrl">Supabase URL</label>
+                  <input id="supabaseUrl" value="${escapeAttribute(config.url || "")}" placeholder="https://twoj-projekt.supabase.co" />
+                </div>
+                <div class="field">
+                  <label for="supabaseAnonKey">Anon public key</label>
+                  <input id="supabaseAnonKey" value="${escapeAttribute(config.anonKey || "")}" placeholder="eyJhbGciOi..." />
+                </div>
+                <div class="actions" style="justify-content: flex-start;">
+                  <button class="primary" id="saveSupabaseConfig">Zapisz konfigurację</button>
+                  <button class="button" id="clearSupabaseConfig">Wyczyść lokalną konfigurację</button>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="section-head">
+                <div>
+                  <h2>Tabela w Supabase</h2>
+                  <p>Wklej ten SQL w Supabase SQL Editor. Polityki RLS sprawiają, że użytkownik widzi tylko swój workspace.</p>
+                </div>
+              </div>
+              <pre class="setup-code"><code>${escapeHtml(getSupabaseSetupSql())}</code></pre>
+            </div>
+          </div>
+        </section>
+        <div id="toast" class="toast" role="status"></div>
+      </main>
+    `;
+
+    bindSupabaseAuthEvents();
+    flushToast();
+    return;
+  }
+
+  app.innerHTML = `
+    <main class="auth-shell">
+      <section class="auth-card">
+        <div class="brand auth-brand">
+          <div class="mark">GH</div>
+          <div>
+            <strong>GoodHR Workbench</strong>
+            <span>logowanie</span>
+          </div>
+        </div>
+        <div class="auth-intro">
+          <h1>${authTitle}</h1>
+          <p>Po zalogowaniu wrócisz do swoich ankiet, projektów i raportów zapisanych na koncie.</p>
+        </div>
+        ${renderAuthFeedback()}
+        ${supabaseConfigError ? `
+          <div class="import-success error" role="alert">
+            <div>
+              <strong>Nie udało się załadować przestrzeni konta</strong>
+              <p>${escapeHtml(supabaseConfigError)}</p>
+            </div>
+          </div>
+        ` : ""}
+        <div class="auth-mode-switch">
+          <button type="button" data-auth-mode="login" class="${authMode === "login" ? "active" : ""}">Logowanie</button>
+          <button type="button" data-auth-mode="register" class="${authMode === "register" ? "active" : ""}">Rejestracja</button>
+        </div>
+        <div class="grid cols-2">
+          <div class="panel">
+            <div class="section-head">
+              <div>
+                <h2>${formTitle}</h2>
+                <p>${formHint}</p>
+              </div>
+            </div>
+            <div class="form-grid">
+              ${isRegister ? `
+                <div class="field">
+                  <label for="authName">Nazwa użytkownika</label>
+                  <input id="authName" autocomplete="name" placeholder="np. Konsultant HR" />
+                </div>
+              ` : ""}
+              <div class="field">
+                <label for="authEmail">E-mail</label>
+                <input id="authEmail" type="email" autocomplete="email" required placeholder="np. konsultant@example.com" />
+              </div>
+              ${isReset ? "" : `<div class="field">
+                <label for="authPassword">Hasło</label>
+                <input id="authPassword" type="password" autocomplete="${isRegister ? "new-password" : "current-password"}" placeholder="Minimum 6 znaków" />
+              </div>`}
+              <button class="primary" id="${isReset ? "requestPasswordReset" : isRegister ? "createAccount" : "loginAccount"}" ${authInProgress ? "disabled" : ""}>${authInProgress ? "Pracuję..." : isReset ? "Wyślij link resetujący" : isRegister ? "Utwórz konto" : "Zaloguj"}</button>
+              ${authMode === "login" ? `<button class="ghost auth-link-button" type="button" data-auth-mode="reset">Nie pamiętasz hasła?</button>` : ""}
+            </div>
+          </div>
+          <div class="panel">
+            <div class="section-head">
+              <div>
+                <h2>Co możesz zrobić w GoodHR?</h2>
+                <p>GoodHR pomaga uporządkować ankiety pracownicze, szybciej odczytać wyniki i przygotować raport dla klienta lub zespołu.</p>
+              </div>
+            </div>
+            <div class="grid cols-1 auth-feature-list">
+              <div class="control-card ok">
+                <strong>Import ankiet</strong>
+                <p>Wczytaj dane z CSV lub Excela i pracuj na każdej ankiecie osobno.</p>
+              </div>
+              <div class="control-card ok">
+                <strong>Analiza wyników</strong>
+                <p>Przeglądaj odpowiedzi, segmenty, komentarze oraz krótkie podsumowania wniosków.</p>
+              </div>
+              <div class="control-card warn">
+                <strong>Raporty</strong>
+                <p>Twórz edytowalne slajdy, eksportuj raporty i wracaj do historii projektów.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <div id="toast" class="toast" role="status"></div>
+    </main>
+  `;
+
+  bindSupabaseAuthEvents();
+  flushToast();
+}
+
+function renderAuthFeedback() {
+  if (!authFeedback) return "";
+  return `
+    <div class="import-success ${escapeAttribute(authFeedback.level || "info")}" role="status">
+      <div>
+        <strong>${escapeHtml(authFeedback.title || "Komunikat")}</strong>
+        <p>${escapeHtml(authFeedback.text || "")}</p>
+      </div>
+    </div>
+  `;
+}
+
+function getSupabaseSetupSql() {
+  return `create table if not exists public.goodhr_workspaces (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  state jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.goodhr_workspaces enable row level security;
+
+create policy "Users can read own workspace"
+on public.goodhr_workspaces
+for select
+using (auth.uid() = user_id);
+
+create policy "Users can insert own workspace"
+on public.goodhr_workspaces
+for insert
+with check (auth.uid() = user_id);
+
+create policy "Users can update own workspace"
+on public.goodhr_workspaces
+for update
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);`;
+}
+
 function renderAuth() {
   const accounts = getAccounts();
   const firstAccount = accounts[0];
@@ -230,11 +675,11 @@ function renderAuth() {
             <div class="form-grid">
               <div class="field">
                 <label for="newAccountName">Nazwa użytkownika</label>
-                <input id="newAccountName" placeholder="np. Sandra / Konsultant HR" />
+                <input id="newAccountName" placeholder="np. Konsultant HR" />
               </div>
               <div class="field">
                 <label for="newAccountEmail">E-mail</label>
-                <input id="newAccountEmail" type="email" placeholder="np. sandra@example.com" />
+                <input id="newAccountEmail" type="email" placeholder="np. konsultant@example.com" />
               </div>
               <div class="field">
                 <label for="newAccountPin">PIN demonstracyjny</label>
@@ -282,13 +727,15 @@ function renderActiveView(project) {
   if (activeView === "taxonomy") return renderTaxonomy(project);
   if (activeView === "privacy") return renderPrivacy(project);
   if (activeView === "report") return renderReport(project);
-  if (activeView === "account") return renderAccount(project);
+  if (activeView === "account") return renderSupabaseAccount(project);
   return "";
 }
 
 function renderDashboard(project) {
   const summary = getMetricSummary(project);
-  const aiInsights = getAiAnswerInsights(project);
+  const aiInsights = getPublishableAiInsights(project);
+  const privacyReviewItems = getPrivacyReviewItems(project);
+  const pendingPrivacyReview = privacyReviewItems.filter((item) => !item.checked).length;
 
   return `
     <section class="view active">
@@ -305,7 +752,7 @@ function renderDashboard(project) {
         ${metric("Odpowiedzi", summary.respondents, `${summary.questions} kolumn w tej ankiecie`)}
         ${metric("Średnia skal", formatNumber(summary.scaleAverage), "pytania typu skala")}
         ${metric("eNPS", summary.enps === null ? "-" : signed(summary.enps), "promotorzy minus krytycy")}
-        ${metric("Gotowość", `${summary.readiness}%`, `${summary.pii} potencjalnych PII`)}
+        ${metric("Dane do kontroli", pendingPrivacyReview ? pendingPrivacyReview : "OK", pendingPrivacyReview ? "niezweryfikowanych elementów przed raportem" : "wszystkie wykrycia sprawdzone")}
       </div>
 
       <div class="panel" style="margin-top: 14px;">
@@ -336,6 +783,240 @@ function renderImportFeedback() {
         ${importFeedback.projectId ? `<button class="primary" data-nav-target="analysis">Przejdź do wyników</button>` : ""}
         <button class="ghost small" data-dismiss-import-feedback>Zamknij</button>
       </div>
+    </div>
+  `;
+}
+
+function getPrivacyReviewStore(project) {
+  if (!project.privacyReview || typeof project.privacyReview !== "object") {
+    project.privacyReview = { checkedItems: {}, sensitiveItems: {} };
+  }
+  if (!project.privacyReview.checkedItems || typeof project.privacyReview.checkedItems !== "object") {
+    project.privacyReview.checkedItems = {};
+  }
+  if (!project.privacyReview.sensitiveItems || typeof project.privacyReview.sensitiveItems !== "object") {
+    project.privacyReview.sensitiveItems = {};
+  }
+  return project.privacyReview.checkedItems;
+}
+
+function getPrivacySensitiveStore(project) {
+  getPrivacyReviewStore(project);
+  return project.privacyReview.sensitiveItems;
+}
+
+function makePrivacyReviewItemId(...parts) {
+  return parts
+    .map((part) => encodeURIComponent(normalizeForLabel(part || "brak").replace(/\s+/g, "-")))
+    .join(":");
+}
+
+function getPrivacyReviewItems(project, pii = detectPii(project), segments = getSmallSegments(project, project.thresholds?.numeric || 5), threshold = project.thresholds?.numeric || 5) {
+  const checkedItems = getPrivacyReviewStore(project);
+  const sensitiveItems = getPrivacySensitiveStore(project);
+  const piiItems = pii.map((item, index) => {
+    const question = item.comment?.question || "Komentarz ankietowy";
+    const answerText = item.comment?.text || "";
+    const commentId = item.comment?.id || `${question}:${item.comment?.text || ""}:${index}`;
+    const id = makePrivacyReviewItemId("pii", item.type, commentId, item.match);
+
+    return {
+      id,
+      commentId,
+      type: "pii",
+      badge: "Dane osobowe",
+      title: `Możliwe dane osobowe: ${item.type}`,
+      evidence: item.match,
+      answerText,
+      context: question,
+      action: "Sprawdź komentarz, usuń lub zanonimizuj fragment przed użyciem w raporcie.",
+      checked: Boolean(checkedItems[id]),
+      sensitive: Boolean(sensitiveItems[id])
+    };
+  });
+
+  const segmentItems = segments.map((item) => {
+    const id = makePrivacyReviewItemId("segment", item.column, item.label);
+
+    return {
+      id,
+      type: "segment",
+      badge: "Mała grupa",
+      title: `Segment poniżej progu: ${item.label}`,
+      evidence: `${item.count}/${threshold} osób`,
+      context: `Kolumna segmentu: ${item.column}`,
+      action: "Połącz z większą grupą albo nie pokazuj osobnego wyniku dla tego segmentu.",
+      checked: Boolean(checkedItems[id]),
+      sensitive: Boolean(sensitiveItems[id])
+    };
+  });
+
+  return [...piiItems, ...segmentItems];
+}
+
+function getSensitiveCommentIds(project) {
+  const ids = new Set();
+  getPrivacyReviewItems(project, detectPii(project), [], project.thresholds?.numeric || 5).forEach((item) => {
+    if (item.type === "pii" && item.sensitive && item.commentId) ids.add(item.commentId);
+  });
+  return ids;
+}
+
+function filterSensitiveComments(project, comments = []) {
+  const sensitiveIds = getSensitiveCommentIds(project);
+  if (!sensitiveIds.size) return comments;
+  return comments.filter((comment) => !sensitiveIds.has(comment.id));
+}
+
+function getPublishableAiInsights(project) {
+  const insights = getAiAnswerInsights(project);
+  const themes = (insights.themes || [])
+    .map((theme) => {
+      const comments = filterSensitiveComments(project, theme.comments || []);
+      const hiddenCount = (theme.comments || []).length - comments.length;
+      return {
+        ...theme,
+        comments,
+        sensitiveHiddenCount: hiddenCount,
+        simplified: hiddenCount ? `${String(theme.simplified || "").trim()} Pominięto ${hiddenCount} komentarzy oflagowanych jako dane wrażliwe.`.trim() : theme.simplified
+      };
+    })
+    .filter((theme) => theme.scaleQuestions.length > 0 || theme.comments.length > 0);
+
+  const scaleItems = (insights.scaleItems || []).map((item) => ({
+    ...item,
+    comments: Array.isArray(item.comments) ? filterSensitiveComments(project, item.comments) : item.comments
+  }));
+
+  return {
+    ...insights,
+    themes,
+    scaleItems
+  };
+}
+
+function getSensitiveHiddenCommentCount(project, comments = []) {
+  return comments.length - filterSensitiveComments(project, comments).length;
+}
+
+function getPublishableTopics(project, topics = getTopics(project)) {
+  return topics
+    .map((topic) => ({
+      ...topic,
+      comments: filterSensitiveComments(project, topic.comments || [])
+    }))
+    .filter((topic) => topic.scaleQuestions?.length || topic.comments.length);
+}
+
+function getSensitiveReportQuoteTexts(project) {
+  const sensitiveIds = getSensitiveCommentIds(project);
+  if (!sensitiveIds.size) return new Set();
+  return new Set(collectComments(project)
+    .filter((comment) => sensitiveIds.has(comment.id))
+    .flatMap((comment) => [
+      normalizeReportQuoteText(comment.text),
+      normalizeReportQuoteText(redactText(comment.text))
+    ])
+    .filter(Boolean));
+}
+
+function normalizeReportQuoteText(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isSensitiveReportQuoteItem(project, item) {
+  const sensitiveIds = getSensitiveCommentIds(project);
+  if (item?.commentId && sensitiveIds.has(item.commentId)) return true;
+  const sensitiveTexts = getSensitiveReportQuoteTexts(project);
+  return sensitiveTexts.has(normalizeReportQuoteText(item?.text));
+}
+
+function filterReportQuoteItems(project, items = []) {
+  return items.filter((item) => !isSensitiveReportQuoteItem(project, item));
+}
+
+function renderHighlightedAnswer(text, match) {
+  const source = formatReviewAnswerText(text);
+  const needle = String(match || "");
+  if (!source) return "Brak treści odpowiedzi.";
+  if (!needle) return escapeHtml(source);
+  const index = source.toLocaleLowerCase("pl").indexOf(needle.toLocaleLowerCase("pl"));
+  if (index < 0) return escapeHtml(source);
+  return [
+    escapeHtml(source.slice(0, index)),
+    `<strong>${escapeHtml(source.slice(index, index + needle.length))}</strong>`,
+    escapeHtml(source.slice(index + needle.length))
+  ].join("");
+}
+
+function formatReviewAnswerText(text) {
+  return String(text || "")
+    .replace(/_x000D_/gi, "\n")
+    .replace(/_x000A_/gi, "\n")
+    .replace(/_x0009_/gi, "\t")
+    .replace(/\r\n?/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function renderPrivacyReviewList(items) {
+  if (!items.length) {
+    return `
+      <div class="empty review-empty">
+        Brak elementów wymagających kontroli przy obecnych progach.
+      </div>
+    `;
+  }
+
+  const openItems = items.filter((item) => !item.checked);
+  const checkedItems = items.filter((item) => item.checked);
+  const renderItem = (item) => `
+    <div class="review-item ${item.checked ? "checked" : ""} ${item.sensitive ? "sensitive" : ""}">
+      <div class="review-item-controls">
+        <label class="review-check">
+          <input type="checkbox" data-privacy-review-item="${escapeAttribute(item.id)}" ${item.checked ? "checked" : ""} />
+          <span>Zweryfikowano</span>
+        </label>
+        <button class="ghost small review-sensitive-toggle ${item.sensitive ? "active" : ""}" type="button" data-privacy-sensitive-item="${escapeAttribute(item.id)}">
+          ${item.sensitive ? "Usuń flagę wrażliwe" : "Oflaguj jako wrażliwe"}
+        </button>
+      </div>
+      <span class="review-item-body">
+        <span class="review-item-head">
+          <span class="pill ${item.type === "pii" ? "amber" : "blue"}">${escapeHtml(item.badge)}</span>
+          ${item.sensitive ? `<span class="pill coral">wrażliwe</span>` : ""}
+          <strong>${escapeHtml(item.title)}</strong>
+        </span>
+        <span class="review-context ${item.type === "pii" ? "question" : ""}">
+          <strong>${item.type === "pii" ? "Pytanie" : "Źródło"}:</strong> ${escapeHtml(item.context)}
+        </span>
+        ${item.type === "pii" ? `
+          <span class="review-answer">${renderHighlightedAnswer(item.answerText, item.evidence)}</span>
+        ` : `<span class="review-evidence">${escapeHtml(item.evidence)}</span>`}
+        <span class="review-action">${escapeHtml(item.action)}</span>
+      </span>
+    </div>
+  `;
+
+  return `
+    <div class="review-list">
+      ${openItems.length ? `
+        <div class="review-group">
+          <div class="review-group-title">Do sprawdzenia (${openItems.length})</div>
+          ${openItems.map(renderItem).join("")}
+        </div>
+      ` : `<div class="empty review-empty compact-empty">Wszystkie wykryte elementy są oznaczone jako sprawdzone.</div>`}
+      ${checkedItems.length ? `
+        <details class="review-checked">
+          <summary>Sprawdzone (${checkedItems.length})</summary>
+          <div class="review-group">
+            ${checkedItems.map(renderItem).join("")}
+          </div>
+        </details>
+      ` : ""}
     </div>
   `;
 }
@@ -441,6 +1122,104 @@ function renderProjects() {
       </div>
       ${renderProjectHistory()}
     </section>
+  `;
+}
+
+function renderSupabaseAccount() {
+  const currentProjectCount = state.projects.length;
+  const currentResponseCount = state.projects.reduce((sum, project) => sum + (project.responses?.length || 0), 0);
+
+  return `
+    <section class="view active">
+      <div class="section-head">
+        <div>
+          <h2>Konto i przestrzeń pracy</h2>
+          <p>Tu sprawdzisz podstawowe dane konta oraz liczbę zapisanych ankiet, odpowiedzi i szablonów.</p>
+        </div>
+        <button class="danger" id="logoutAccount">Wyloguj</button>
+      </div>
+
+      <div class="grid cols-4">
+        ${metric("Aktywne konto", currentAccount.name, currentAccount.email)}
+        ${metric("Ankiety", currentProjectCount, "widoczne tylko dla tego konta")}
+        ${metric("Odpowiedzi", currentResponseCount, "we wszystkich ankietach konta")}
+        ${metric("Szablony importu", state.importTemplates?.length || 0, "zapisane ustawienia importu")}
+      </div>
+
+      <div class="grid wide-left account-grid">
+        <div class="panel">
+          <div class="section-head">
+            <div>
+              <h2>Informacje o koncie</h2>
+              <p>Te dane pomagają upewnić się, że pracujesz na właściwym profilu.</p>
+            </div>
+            <span class="pill teal">aktywne</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <tbody>
+                <tr><th>Użytkownik</th><td>${escapeHtml(currentAccount.name)}</td></tr>
+                <tr><th>E-mail</th><td>${escapeHtml(currentAccount.email || "-")}</td></tr>
+                <tr><th>Ostatnie logowanie</th><td>${escapeHtml(formatDateTime(currentAccount.lastLoginAt || ""))}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel supabase-panel">
+          <div class="section-head">
+            <div>
+              <h2>Co zapisuje GoodHR?</h2>
+              <p>Aplikacja zachowuje elementy potrzebne do kontynuowania pracy nad badaniami i raportami.</p>
+            </div>
+            <span class="pill blue">konto</span>
+          </div>
+          <div class="grid cols-1 auth-feature-list">
+            <div class="control-card ok">
+              <strong>Ankiety i importy</strong>
+              <p>Zaimportowane pliki, mapowania kolumn oraz historia projektów pozostają przypisane do konta.</p>
+            </div>
+            <div class="control-card ok">
+              <strong>Raporty</strong>
+              <p>Slajdy, wersje raportów i ręczne poprawki są dostępne po kolejnym zalogowaniu.</p>
+            </div>
+            <div class="control-card warn">
+              <strong>Ustawienia pracy</strong>
+              <p>Aplikacja zapamiętuje szablony importu i podstawowe ustawienia potrzebne przy kolejnych ankietach.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      ${renderPasswordResetPanel()}
+    </section>
+  `;
+}
+
+function renderPasswordResetPanel() {
+  if (!passwordResetMode) return "";
+
+  return `
+    <div class="panel password-panel ${passwordResetMode ? "highlight" : ""}">
+      <div class="section-head">
+        <div>
+          <h2>${passwordResetMode ? "Ustaw nowe hasło" : "Zmiana hasła"}</h2>
+          <p>${passwordResetMode ? "Link resetujący został otwarty poprawnie. Wpisz nowe hasło dla tego konta." : "Możesz ustawić nowe hasło dla aktualnie zalogowanego konta."}</p>
+        </div>
+        ${passwordResetMode ? `<span class="pill teal">reset aktywny</span>` : `<span class="pill">opcjonalne</span>`}
+      </div>
+      <div class="form-grid password-form">
+        <div class="field">
+          <label for="newPassword">Nowe hasło</label>
+          <input id="newPassword" type="password" autocomplete="new-password" placeholder="Minimum 6 znaków" />
+        </div>
+        <div class="field">
+          <label for="confirmNewPassword">Powtórz hasło</label>
+          <input id="confirmNewPassword" type="password" autocomplete="new-password" placeholder="Powtórz nowe hasło" />
+        </div>
+        <button class="primary" id="updateSupabasePassword" ${authInProgress ? "disabled" : ""}>${authInProgress ? "Zapisuję..." : "Zapisz nowe hasło"}</button>
+      </div>
+    </div>
   `;
 }
 
@@ -948,7 +1727,7 @@ function looksLikeAnswerMetadataValue(value) {
 function renderAnalysis(project) {
   const stats = sortQuestionStats(getQuestionStats(project));
   const rawHeatmap = getHeatmap(project);
-  const baseAiInsights = getAiAnswerInsights(project);
+  const baseAiInsights = getPublishableAiInsights(project);
   const aiInsights = applyProjectTaxonomy(project, baseAiInsights);
   validateAnalysisCategory(aiInsights.themes);
   const selectedTheme = getSelectedAnalysisTheme(aiInsights.themes);
@@ -1545,6 +2324,7 @@ function renderEvidenceAndRecommendations(theme, question, project) {
             <span class="pill ${theme.color}">${escapeHtml(theme.name)}</span>
             <span class="pill">${escapeHtml(evidence.scopeLabel)}</span>
             <span class="pill ${evidence.piiCount ? "amber" : "teal"}">${evidence.piiCount ? `${evidence.piiCount} PII do kontroli` : "bez oczywistych PII"}</span>
+            ${evidence.sensitiveHiddenCount ? `<span class="pill coral">${evidence.sensitiveHiddenCount} wrażliwych pominięto</span>` : ""}
           </div>
         </div>
 
@@ -1580,7 +2360,9 @@ function renderEvidenceAndRecommendations(theme, question, project) {
 
 function buildEvidencePack(theme, question, project) {
   const areaData = question ? getAreaAnswerData(project, question) : null;
-  const comments = question ? areaData.comments : theme.comments || [];
+  const sourceComments = question ? areaData.comments : theme.comments || [];
+  const comments = question ? sourceComments : filterSensitiveComments(project, sourceComments);
+  const sensitiveHiddenCount = question ? areaData.sensitiveHiddenCount : getSensitiveHiddenCommentCount(project, sourceComments);
   const scaleQuestions = question ? question.scaleQuestions || [] : theme.scaleQuestions || [];
   const scaleAnswerCount = question ? areaData.scaleAnswers.length : scaleQuestions.reduce((sum, item) => sum + (item.count || 0), 0);
   const answerCount = question ? areaData.totalAnswers : comments.length + scaleAnswerCount;
@@ -1619,6 +2401,7 @@ function buildEvidencePack(theme, question, project) {
   return {
     answerCount,
     commentCount: comments.length,
+    sensitiveHiddenCount,
     questionCount: Math.max(1, sourceQuestions.length),
     segmentCount: segmentValues.size,
     piiCount,
@@ -1669,7 +2452,9 @@ function buildRecommendationActions(theme, question, evidence) {
       body: evidence.readyForClient
         ? "Cytaty wyglądają roboczo bezpiecznie, ale przed pokazaniem klientowi warto sprawdzić kontekst małych grup."
         : "Przed raportem sprawdź PII, małe grupy i cytaty, bo automatyczna anonimizacja nie daje pełnej gwarancji bezpieczeństwa.",
-      evidence: evidence.piiCount ? `${evidence.piiCount} cytatów wymaga kontroli PII.` : "Brak oczywistych PII w cytatach dla tego zakresu."
+      evidence: evidence.sensitiveHiddenCount
+        ? `${evidence.sensitiveHiddenCount} komentarzy wrażliwych pominięto z cytatów i podsumowania.`
+        : evidence.piiCount ? `${evidence.piiCount} cytatów wymaga kontroli PII.` : "Brak oczywistych PII w cytatach dla tego zakresu."
     }
   ];
 
@@ -1697,7 +2482,7 @@ function chooseRecommendationOwner(themeName, scope) {
 }
 
 function renderAreaAnswerList(area, project) {
-  const { scaleAnswers, comments, totalAnswers, piiCommentIds } = getAreaAnswerData(project, area);
+  const { scaleAnswers, comments, totalAnswers, piiCommentIds, sensitiveHiddenCount } = getAreaAnswerData(project, area);
   const visibleScaleAnswers = scaleAnswers.slice(0, SCALE_ANSWER_RENDER_LIMIT);
   const visibleComments = comments.slice(0, COMMENT_RENDER_LIMIT);
   const hiddenAnswerCount = Math.max(0, totalAnswers - visibleScaleAnswers.length - visibleComments.length);
@@ -1728,8 +2513,9 @@ function renderAreaAnswerList(area, project) {
             </article>
           `;
         }).join("")}
-        ${hiddenAnswerCount ? `<div class="empty compact-empty">Pokazano pierwsze ${visibleScaleAnswers.length + visibleComments.length} z ${totalAnswers} odpowiedzi. Wszystkie odpowiedzi nadal sa uwzgledniane w analizie i podsumowaniu.</div>` : ""}
-        ${totalAnswers ? "" : `<div class="empty">Brak odpowiedzi w tym obszarze.</div>`}
+        ${hiddenAnswerCount ? `<div class="empty compact-empty">Pokazano pierwsze ${visibleScaleAnswers.length + visibleComments.length} z ${totalAnswers} odpowiedzi. Wszystkie widoczne odpowiedzi nadal są uwzględniane w analizie i podsumowaniu.</div>` : ""}
+        ${sensitiveHiddenCount ? `<div class="empty compact-empty">Pominięto ${sensitiveHiddenCount} komentarzy oflagowanych jako dane wrażliwe.</div>` : ""}
+        ${totalAnswers ? "" : `<div class="empty">${sensitiveHiddenCount ? "Brak odpowiedzi po pominięciu komentarzy oflagowanych jako dane wrażliwe." : "Brak odpowiedzi w tym obszarze."}</div>`}
       </div>
     </div>
   `;
@@ -1904,7 +2690,7 @@ function readOllamaSettingsFromDom() {
 }
 
 async function generateModelSummary(project) {
-  const baseAiInsights = getAiAnswerInsights(project);
+  const baseAiInsights = getPublishableAiInsights(project);
   const aiInsights = applyProjectTaxonomy(project, baseAiInsights);
   const theme = getSelectedAnalysisTheme(aiInsights.themes);
   const questionOptions = getQuestionOptionsForTheme(theme);
@@ -1946,11 +2732,13 @@ async function generateModelSummary(project) {
 
 function getAreaAnswerData(project, area) {
   const scaleAnswers = collectScaleAnswerRows(project, area);
-  const comments = area.comments || [];
+  const sourceComments = area.comments || [];
+  const comments = filterSensitiveComments(project, sourceComments);
+  const sensitiveHiddenCount = sourceComments.length - comments.length;
   const totalAnswers = scaleAnswers.length + comments.length;
   const pii = detectPii(project);
   const piiCommentIds = new Set(pii.map((item) => item.comment.id));
-  return { scaleAnswers, comments, totalAnswers, piiCommentIds };
+  return { scaleAnswers, comments, totalAnswers, piiCommentIds, sensitiveHiddenCount };
 }
 
 function collectScaleAnswerRows(project, area) {
@@ -2251,23 +3039,13 @@ function renderPrivacy(project) {
   const numericThreshold = project.thresholds?.numeric || 5;
   const commentThreshold = project.thresholds?.comments || 10;
   const segments = getSmallSegments(project, numericThreshold);
-  const needsReview = pii.length > 0 || segments.length > 0;
-  const reviewRows = [
-    ...pii.map((item) => `
-      <tr>
-        <td>PII w komentarzu</td>
-        <td><mark>${escapeHtml(item.match)}</mark></td>
-        <td>${escapeHtml(item.comment.question)}</td>
-      </tr>
-    `),
-    ...segments.map(([name, count]) => `
-      <tr>
-        <td>Mała grupa</td>
-        <td>${escapeHtml(name)} (${count}/${numericThreshold})</td>
-        <td>Nie pokazuj wyniku segmentu, dopóki grupa jest poniżej progu.</td>
-      </tr>
-    `)
-  ].join("");
+  const reviewItems = getPrivacyReviewItems(project, pii, segments, numericThreshold);
+  const pendingItems = reviewItems.filter((item) => !item.checked);
+  const checkedItems = reviewItems.filter((item) => item.checked);
+  const sensitiveItems = reviewItems.filter((item) => item.sensitive);
+  const piiPending = pendingItems.filter((item) => item.type === "pii").length;
+  const segmentPending = pendingItems.filter((item) => item.type === "segment").length;
+  const needsReview = pendingItems.length > 0;
 
   return `
     <section class="view active control-view">
@@ -2275,20 +3053,20 @@ function renderPrivacy(project) {
         <div class="section-head">
           <div>
             <h2>Kontrola danych przed raportem</h2>
-            <p>Ten widok służy do sprawdzenia, czy dane można bezpiecznie pokazać w wynikach i raporcie: bez danych osobowych, bez zbyt małych grup i z jasnymi progami publikacji.</p>
+            <p>Ten widok działa jak lista kontrolna przed pokazaniem wyników klientowi. Aplikacja wykrywa potencjalne ryzyka, a Ty możesz je sprawdzić i odhaczyć.</p>
           </div>
           <span class="pill ${needsReview ? "amber" : "teal"}">${needsReview ? "wymaga sprawdzenia" : "gotowe roboczo"}</span>
         </div>
         <div class="control-checks">
           <div class="control-card ${pii.length ? "warn" : "ok"}">
             <span class="pill ${pii.length ? "amber" : "teal"}">1. Dane osobowe</span>
-            <strong>${pii.length ? `${pii.length} fragmentów do kontroli` : "Brak oczywistych wykryć"}</strong>
-            <p>Sprawdź, czy komentarze nie zawierają imion, maili, telefonów albo innych danych pozwalających rozpoznać osobę.</p>
+            <strong>${piiPending ? `${piiPending} fragmentów do sprawdzenia` : pii.length ? "Wykrycia sprawdzone" : "Brak oczywistych wykryć"}</strong>
+            <p>Flagowane są komentarze z e-mailami, telefonami, wybranymi imionami albo bardzo charakterystycznym kontekstem osoby.</p>
           </div>
           <div class="control-card ${segments.length ? "warn" : "ok"}">
             <span class="pill ${segments.length ? "amber" : "teal"}">2. Małe grupy</span>
-            <strong>${segments.length ? `${segments.length} grup poniżej progu` : "Segmenty spełniają próg"}</strong>
-            <p>Wyniki segmentów poniżej ${numericThreshold} osób powinny być ukryte albo połączone z większą grupą.</p>
+            <strong>${segmentPending ? `${segmentPending} grup poniżej progu` : segments.length ? "Grupy sprawdzone" : "Segmenty spełniają próg"}</strong>
+            <p>Flagowane są segmenty poniżej progu ${numericThreshold} osób, bo wynik małej grupy może ujawniać pojedynczych respondentów.</p>
           </div>
           <div class="control-card ok">
             <span class="pill blue">3. Progi raportu</span>
@@ -2299,9 +3077,9 @@ function renderPrivacy(project) {
       </div>
 
       <div class="grid cols-3">
-        ${metric("Status danych", needsReview ? "Do przeglądu" : "OK", `${summary.readiness}% gotowości roboczej`)}
-        ${metric("PII", summary.pii, "fragmenty komentarzy do sprawdzenia")}
-        ${metric("Małe grupy", segments.length, `poniżej progu ${numericThreshold} osób`)}
+        ${metric("Do sprawdzenia", pendingItems.length ? pendingItems.length : "OK", `${piiPending} danych osobowych, ${segmentPending} małych grup`)}
+        ${metric("Sprawdzone", checkedItems.length, "odznacz, jeśli element trzeba wrócić do kontroli")}
+        ${metric("Oflagowane", sensitiveItems.length, "potwierdzone jako wrażliwe")}
       </div>
 
       <div class="grid wide-right control-grid">
@@ -2327,17 +3105,34 @@ function renderPrivacy(project) {
         <div class="panel">
           <div class="section-head">
             <div>
-              <h2>Elementy do sprawdzenia</h2>
-              <p>Lista pokazuje tylko rzeczy, które mogą wymagać decyzji przed raportem.</p>
+              <h2>Lista kontroli</h2>
+              <p>Zaznacz element jako zweryfikowany po kontroli. Jeśli dane faktycznie są wrażliwe, użyj osobnej flagi obok elementu.</p>
             </div>
+            <span class="pill ${needsReview ? "amber" : "teal"}">${pendingItems.length ? `${pendingItems.length} do sprawdzenia` : "brak otwartych elementów"}</span>
           </div>
-          <div class="table-wrap" style="margin-top: 12px;">
-            <table>
-              <thead><tr><th>Co sprawdzić</th><th>Fragment lub grupa</th><th>Co zrobić</th></tr></thead>
-              <tbody>
-                ${reviewRows || `<tr><td colspan="3">Brak elementów wymagających kontroli przy obecnych progach.</td></tr>`}
-              </tbody>
-            </table>
+          ${renderPrivacyReviewList(reviewItems)}
+        </div>
+      </div>
+
+      <div class="panel control-explainer">
+        <div class="section-head">
+          <div>
+            <h2>Jak działa flagowanie?</h2>
+            <p>To są automatyczne podpowiedzi do ręcznej kontroli, a nie decyzja o usunięciu danych.</p>
+          </div>
+        </div>
+        <div class="control-explainer-grid">
+          <div>
+            <strong>Dane osobowe w komentarzach</strong>
+            <p>Aplikacja szuka wzorców takich jak e-mail, telefon, wybrane imiona oraz frazy sugerujące unikalny kontekst osoby, np. awans, zwolnienie albo konkretny projekt.</p>
+          </div>
+          <div>
+            <strong>Małe grupy respondentów</strong>
+            <p>Aplikacja liczy wartości w kolumnach segmentów. Jeśli grupa ma mniej osób niż ustawiony próg, trafia na listę kontroli.</p>
+          </div>
+          <div>
+            <strong>Odhaczanie</strong>
+            <p>Po zaznaczeniu element zostaje zapisany w projekcie jako zweryfikowany. Możesz go odznaczyć, aby wrócił do listy otwartych kontroli, albo osobno oznaczyć jako dane wrażliwe.</p>
           </div>
         </div>
       </div>
@@ -2575,6 +3370,7 @@ function renderReportPropertiesPanel(project, activeSlide) {
         <div class="property-button-row">
           <button class="button small" id="downloadMarkdownReport">Markdown</button>
           <button class="primary small" id="downloadHtmlReport">HTML</button>
+          <button class="button small" id="downloadPdfReport">PDF</button>
         </div>
       </div>
 
@@ -2743,6 +3539,7 @@ function renderReportRibbon(project, deck, deckSettings, activeSlide, activeSlid
           <div class="report-ribbon-buttons">
             <button class="button small" id="downloadMarkdownReport">Markdown</button>
             <button class="primary small" id="downloadHtmlReport">HTML</button>
+            <button class="button small" id="downloadPdfReport">PDF</button>
           </div>
         </div>
 
@@ -2908,7 +3705,7 @@ function renderSlideVisual(slide, project) {
   if (slide.type === "enps") return renderEnpsSlide(slide);
   if (slide.type === "bars") return renderBarChart(slide.chart || {});
   if (slide.type === "topics") return renderTopicBars(slide.items || []);
-  if (slide.type === "quotes") return renderQuoteSlide(slide.items || []);
+  if (slide.type === "quotes") return renderQuoteSlide(slide.items || [], project);
   if (slide.type === "checklist") return renderChecklistSlide(slide.items || []);
   return renderEditableBulletList(slide.items || []);
 }
@@ -3074,10 +3871,13 @@ function renderTopicBars(items) {
   `;
 }
 
-function renderQuoteSlide(items) {
+function renderQuoteSlide(items, project = null) {
+  const visibleItems = items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => !project || !isSensitiveReportQuoteItem(project, item));
   return `
     <div class="report-quote-grid">
-      ${items.map((item, index) => `
+      ${visibleItems.map(({ item, index }) => `
         <blockquote data-editable-list="items" data-item-index="${index}">
           <p class="editable" contenteditable="true" data-item-field="text">${escapeHtml(item.text || "")}</p>
           <cite class="editable" contenteditable="true" data-item-field="label">${escapeHtml(item.label || "Cytat")}</cite>
@@ -3111,6 +3911,187 @@ function renderEditableBulletList(items) {
       `).join("")}
     </div>
   `;
+}
+
+function bindSupabaseAuthEvents() {
+  app.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      authMode = button.dataset.authMode;
+      authFeedback = null;
+      render();
+    });
+  });
+
+  app.querySelector("#saveSupabaseConfig")?.addEventListener("click", async () => {
+    try {
+      saveSupabaseBrowserConfig({
+        url: app.querySelector("#supabaseUrl")?.value,
+        anonKey: app.querySelector("#supabaseAnonKey")?.value
+      });
+      authFeedback = {
+        level: "info",
+        title: "Konfiguracja zapisana",
+        text: "Aplikacja spróbuje teraz połączyć się z Supabase."
+      };
+      toast("Zapisano konfigurację Supabase.");
+      await bootApp();
+    } catch (error) {
+      toast(error.message || "Nie udało się zapisać konfiguracji Supabase.");
+    }
+  });
+
+  app.querySelector("#clearSupabaseConfig")?.addEventListener("click", async () => {
+    clearSupabaseBrowserConfig();
+    toast("Wyczyszczono lokalną konfigurację Supabase.");
+    await bootApp();
+  });
+
+  app.querySelector("#loginAccount")?.addEventListener("click", async () => {
+    await runAuthAction(async () => {
+      const email = readAuthEmail();
+      validateAuthEmail(email);
+      const data = await signInWithPassword(
+        email,
+        app.querySelector("#authPassword")?.value
+      );
+      authFeedback = null;
+      await activateSupabaseSession(data.session, "dashboard", false);
+      toast("Zalogowano do przestrzeni projektów.");
+      render();
+    }, "Nieudana próba logowania");
+  });
+
+  app.querySelector("#createAccount")?.addEventListener("click", async () => {
+    await runAuthAction(async () => {
+      const email = readAuthEmail();
+      validateAuthEmail(email);
+      const data = await signUpWithPassword(
+        email,
+        app.querySelector("#authPassword")?.value,
+        app.querySelector("#authName")?.value
+      );
+      if (data.session) {
+        authFeedback = null;
+        await activateSupabaseSession(data.session, "dashboard", false);
+        toast("Utworzono konto i przestrzeń projektów.");
+        render();
+        return;
+      }
+      authFeedback = {
+        level: "info",
+        title: "Konto zostało utworzone",
+        text: `Na adres ${email} wysłano wiadomość aktywacyjną, jeśli Supabase wymaga potwierdzenia e-mail. Po potwierdzeniu możesz się zalogować.`
+      };
+      toast("Konto zostało utworzone. Sprawdź e-mail, jeśli Supabase wymaga potwierdzenia.");
+      authMode = "login";
+      render();
+    }, "Nie udało się utworzyć konta.");
+  });
+
+  app.querySelector("#requestPasswordReset")?.addEventListener("click", async () => {
+    await runAuthAction(async () => {
+      const email = readAuthEmail();
+      validateAuthEmail(email);
+      await sendPasswordResetEmail(email);
+      authFeedback = {
+        level: "info",
+        title: "Wysłano link resetujący",
+        text: `Sprawdź skrzynkę ${email}. Po kliknięciu linku aplikacja pozwoli ustawić nowe hasło.`
+      };
+      toast("Wysłano link resetujący hasło.");
+      authMode = "login";
+      render();
+    }, "Nie udało się wysłać linku resetującego");
+  });
+}
+
+async function runAuthAction(action, fallbackMessage) {
+  if (authInProgress) return;
+  authInProgress = true;
+  try {
+    await action();
+  } catch (error) {
+    const message = formatAuthErrorMessage(error, fallbackMessage);
+    authFeedback = {
+      level: "error",
+      title: fallbackMessage,
+      text: message
+    };
+    toast(message);
+    authInProgress = false;
+    render();
+    return;
+  }
+  authInProgress = false;
+}
+
+function formatAuthErrorMessage(error, fallbackMessage) {
+  const message = String(error?.message || "").trim();
+  if (/email rate limit exceeded|rate limit.*email|email.*rate limit/i.test(message)) {
+    return "Limit wysyłki maili aktywacyjnych w Supabase został przekroczony. Poczekaj i spróbuj ponownie później albo skonfiguruj własny SMTP w Supabase.";
+  }
+  if (/invalid login credentials/i.test(message)) {
+    return "Nie udało się zalogować. Sprawdź adres e-mail i hasło.";
+  }
+  if (/email not confirmed|not confirmed/i.test(message)) {
+    return "Adres e-mail nie został jeszcze potwierdzony. Sprawdź skrzynkę albo wyślij link ponownie w Supabase.";
+  }
+  if (/email/i.test(message) && /invalid/i.test(message)) {
+    return "Podaj poprawny adres e-mail.";
+  }
+  if (/password/i.test(message) && /6|short|characters/i.test(message)) {
+    return "Hasło powinno mieć co najmniej 6 znaków.";
+  }
+  return message || fallbackMessage;
+}
+
+function readAuthEmail() {
+  return String(app.querySelector("#authEmail")?.value || "").trim().toLowerCase();
+}
+
+function validateAuthEmail(email) {
+  if (!email || !email.includes("@")) {
+    throw new Error("Podaj poprawny adres e-mail zawierający znak @.");
+  }
+}
+
+function bindSupabaseAccountEvents() {
+  app.querySelector("#updateSupabasePassword")?.addEventListener("click", async () => {
+    if (authInProgress) return;
+    const password = String(app.querySelector("#newPassword")?.value || "");
+    const confirmation = String(app.querySelector("#confirmNewPassword")?.value || "");
+    try {
+      if (password.length < 6) {
+        throw new Error("Hasło powinno mieć co najmniej 6 znaków.");
+      }
+      if (password !== confirmation) {
+        throw new Error("Podane hasła nie są takie same.");
+      }
+      authInProgress = true;
+      render();
+      await updateSupabasePassword(password);
+      passwordResetMode = false;
+      authFeedback = null;
+      toast("Hasło zostało zmienione.");
+      authInProgress = false;
+      render();
+    } catch (error) {
+      authInProgress = false;
+      toast(formatAuthErrorMessage(error, "Nie udało się zmienić hasła."));
+      render();
+    }
+  });
+
+  app.querySelector("#logoutAccount")?.addEventListener("click", async () => {
+    try {
+      await signOutSupabase();
+      toast("Wylogowano z konta.");
+    } catch (error) {
+      toast(error.message || "Nie udało się wylogować.");
+    } finally {
+      deactivateSupabaseAccount();
+    }
+  });
 }
 
 function bindAuthEvents() {
@@ -3241,6 +4222,7 @@ function bindShellEvents() {
     try {
       const project = await importProjectFile(file);
       upsertProject(state, project);
+      await waitForRemoteStateSave();
       toast("Projekt JSON został zaimportowany.");
       render();
     } catch (error) {
@@ -3278,7 +4260,7 @@ function bindViewEvents(project) {
   if (activeView === "taxonomy") bindTaxonomyEvents(project);
   if (activeView === "privacy") bindPrivacyEvents(project);
   if (activeView === "report") bindReportEvents(project);
-  if (activeView === "account") bindAccountEvents();
+  if (activeView === "account") bindSupabaseAccountEvents();
 }
 
 function bindAnalysisEvents(project) {
@@ -3432,7 +4414,7 @@ function bindProjectsEvents() {
   });
 
   app.querySelectorAll("[data-confirm-delete-project]").forEach((button) => {
-    button.addEventListener("click", (event) => {
+    button.addEventListener("click", async (event) => {
       event.preventDefault();
       const projectToDelete = state.projects.find((item) => item.id === button.dataset.confirmDeleteProject);
       if (!projectToDelete) return;
@@ -3440,6 +4422,7 @@ function bindProjectsEvents() {
       const previousCurrentProjectId = state.currentProjectId;
       try {
         removeProject(state, button.dataset.confirmDeleteProject);
+        await waitForRemoteStateSave();
       } catch (error) {
         state.projects = previousProjects;
         state.currentProjectId = previousCurrentProjectId;
@@ -3587,7 +4570,7 @@ function bindImportEvents() {
   });
 }
 
-function finishSurveyImport(draft, formValues) {
+async function finishSurveyImport(draft, formValues) {
   const columns = draft.columns.filter((column) => column.type !== "ignore");
   const ignored = new Set(draft.columns.filter((column) => column.type === "ignore").map((column) => column.name));
   const responses = draft.rows.map((row) => {
@@ -3618,6 +4601,7 @@ function finishSurveyImport(draft, formValues) {
   const previousCurrentProjectId = state.currentProjectId;
   try {
     upsertProject(state, project);
+    await waitForRemoteStateSave();
   } catch (error) {
     state.projects = previousProjects;
     state.currentProjectId = previousCurrentProjectId;
@@ -3662,6 +4646,41 @@ function bindPrivacyEvents(project) {
     upsertProject(state, project);
     toast("Progi kontroli danych zapisane.");
     render();
+  });
+
+  app.querySelectorAll("[data-privacy-review-item]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const checkedItems = getPrivacyReviewStore(project);
+      const itemId = input.dataset.privacyReviewItem;
+      if (!itemId) return;
+      if (input.checked) {
+        checkedItems[itemId] = { checkedAt: new Date().toISOString() };
+        toast("Element oznaczony jako zweryfikowany.");
+      } else {
+        delete checkedItems[itemId];
+        toast("Element odznaczony. Wrócił do listy kontroli.");
+      }
+      upsertProject(state, project);
+      render();
+    });
+  });
+
+  app.querySelectorAll("[data-privacy-sensitive-item]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const sensitiveItems = getPrivacySensitiveStore(project);
+      const itemId = button.dataset.privacySensitiveItem;
+      if (!itemId) return;
+      if (sensitiveItems[itemId]) {
+        delete sensitiveItems[itemId];
+        toast("Usunięto flagę danych wrażliwych.");
+      } else {
+        sensitiveItems[itemId] = { flaggedAt: new Date().toISOString() };
+        toast("Element oflagowany jako dane wrażliwe i pomijany w wynikach publikacyjnych.");
+      }
+      project.aiSummaries = {};
+      upsertProject(state, project);
+      render();
+    });
   });
 }
 
@@ -3779,6 +4798,10 @@ function bindReportPropertiesPanelEvents(project) {
 
   panel.querySelector("#downloadHtmlReport")?.addEventListener("click", () => {
     downloadText(`${project.client}-${project.name}.html`, buildHtmlReport(project), "text/html;charset=utf-8");
+  });
+
+  panel.querySelector("#downloadPdfReport")?.addEventListener("click", () => {
+    openPdfPrintReport(project);
   });
 
   panel.querySelectorAll("[data-duplicate-report-slide]").forEach((button) => {
@@ -4101,6 +5124,10 @@ function bindReportEvents(project) {
   app.querySelector("#downloadHtmlReport")?.addEventListener("click", () => {
     downloadText(`${project.client}-${project.name}.html`, buildHtmlReport(project), "text/html;charset=utf-8");
   });
+
+  app.querySelector("#downloadPdfReport")?.addEventListener("click", () => {
+    openPdfPrintReport(project);
+  });
 }
 
 function bindSegmentsEvents() {
@@ -4389,12 +5416,13 @@ function surveyOptionLabel(project) {
 }
 
 function buildReportDeck(project) {
-  const report = buildReportDraft(project);
   const summary = getMetricSummary(project);
   const stats = getQuestionStats(project);
-  const topics = getTopics(project);
-  const comments = collectComments(project);
-  const pii = detectPii(project);
+  const topics = getPublishableTopics(project);
+  const allComments = collectComments(project);
+  const comments = filterSensitiveComments(project, allComments);
+  const hiddenSensitiveComments = allComments.length - comments.length;
+  const report = buildPublishableReportDraft(project, summary, stats, topics, comments);
   const numericStats = stats.filter((item) => item.average !== null && item.average !== undefined);
   const topStats = [...numericStats].sort((a, b) => b.average - a.average).slice(0, 5);
   const bottomStats = [...numericStats].sort((a, b) => a.average - b.average).slice(0, 5);
@@ -4436,7 +5464,7 @@ function buildReportDeck(project) {
       body: "Slajd zastępuje stronę frekwencji, gdy w danych nie ma pełnej listy zaproszonych osób.",
       items: [
         { label: "odpowiedzi w bazie", value: summary.respondents },
-        { label: "komentarze otwarte", value: summary.comments },
+        { label: "komentarze otwarte", value: report.evidence.comments },
         { label: "obszary tematyczne", value: topics.length },
         { label: "gotowość raportu", value: `${summary.readiness}%` }
       ],
@@ -4534,7 +5562,8 @@ function buildReportDeck(project) {
       body: "Cytaty są zanonimizowane automatycznie i powinny zostać sprawdzone przed publikacją.",
       items: comments.slice(0, 4).map((comment) => ({
         label: createReadableQuestionName(comment.question),
-        text: redactText(comment.text)
+        text: redactText(comment.text),
+        commentId: comment.id
       })),
       notes: "Usuń cytaty, które mogłyby pośrednio identyfikować osobę lub mały zespół."
     },
@@ -4549,8 +5578,9 @@ function buildReportDeck(project) {
         { text: "Nie używać raportu do oceny pojedynczych pracowników." },
         { text: `Ukrywać lub agregować grupy poniżej progu ${project.thresholds?.numeric || 5} osób.` },
         { text: "Przed publikacją sprawdzić potencjalne dane osobowe i cytaty." },
-        { text: "Traktować klasyfikacje AI jako szkic wymagający przeglądu człowieka." }
-      ],
+        { text: "Traktować klasyfikacje AI jako szkic wymagający przeglądu człowieka." },
+        hiddenSensitiveComments ? { text: `Z raportu pominięto ${hiddenSensitiveComments} komentarzy oflagowanych jako dane wrażliwe.` } : null
+      ].filter(Boolean),
       notes: "Ten slajd warto zostawić w wersji klientowskiej jako transparentne ograniczenia analizy."
     }
   ];
@@ -4560,6 +5590,34 @@ function buildReportDeck(project) {
     generatedAt: new Date().toISOString(),
     settings: defaultReportDeckSettings(),
     slides: slides.filter(shouldGenerateReportSlide).map(normalizeReportSlideForEditor)
+  };
+}
+
+function buildPublishableReportDraft(project, summary = getMetricSummary(project), stats = getQuestionStats(project), topics = getPublishableTopics(project), comments = filterSensitiveComments(project, collectComments(project))) {
+  const numericStats = stats.filter((item) => item.average !== null && item.average !== undefined);
+  const weakest = [...numericStats].sort((a, b) => (a.average || 0) - (b.average || 0))[0];
+  const strongest = [...numericStats].sort((a, b) => (b.average || 0) - (a.average || 0))[0];
+  const topTopic = topics[0];
+  const sensitiveCommentIds = getSensitiveCommentIds(project);
+  const pii = detectPii(project).filter((item) => !sensitiveCommentIds.has(item.comment.id));
+
+  return {
+    headline: `Raport ${project.client}: ${project.name}`,
+    executiveSummary: [
+      `W badaniu wzięło udział ${summary.respondents} respondentów. Średni wynik pytań skalowych wynosi ${formatNumber(summary.scaleAverage)}.`,
+      summary.enps !== null ? `Wskaźnik eNPS wynosi ${summary.enps}.` : "W projekcie nie wykryto kolumny eNPS.",
+      strongest ? `Najmocniejszy obszar to "${strongest.name}" ze średnią ${formatNumber(strongest.average)}.` : "",
+      weakest ? `Największej uwagi wymaga "${weakest.name}" ze średnią ${formatNumber(weakest.average)}.` : "",
+      topTopic ? `Najczęściej powracający temat komentarzy to "${topTopic.name}" (${topTopic.comments.length} wypowiedzi po pominięciu danych wrażliwych).` : ""
+    ].filter(Boolean),
+    evidence: {
+      respondents: summary.respondents,
+      comments: comments.length,
+      pii: pii.length,
+      topics: topics.length,
+      thresholdNumeric: project.thresholds?.numeric || 5,
+      thresholdComments: project.thresholds?.comments || 10
+    }
   };
 }
 
@@ -4955,14 +6013,27 @@ function getSlideList(slide, path) {
 }
 
 function getSmallSegments(project, threshold) {
-  const segment = project.schema?.columns?.find((column) => column.type === "segment");
-  if (!segment) return [];
-  const counts = {};
-  project.responses.forEach((row) => {
-    const key = row[segment.name] || "Brak segmentu";
-    counts[key] = (counts[key] || 0) + 1;
+  const segments = project.schema?.columns?.filter((column) => column.type === "segment") || [];
+  const findings = [];
+
+  segments.forEach((segment) => {
+    const counts = {};
+    project.responses.forEach((row) => {
+      const key = row[segment.name] || "Brak segmentu";
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    Object.entries(counts).forEach(([label, count]) => {
+      if (count < threshold) {
+        findings.push({
+          column: segment.name,
+          label,
+          count
+        });
+      }
+    });
   });
-  return Object.entries(counts).filter(([, count]) => count < threshold);
+
+  return findings.sort((a, b) => a.count - b.count || a.column.localeCompare(b.column, "pl") || a.label.localeCompare(b.label, "pl"));
 }
 
 function getQuestionOptionsForTheme(theme) {
@@ -5513,10 +6584,13 @@ function sortNumberDesc(a, b) {
 }
 
 function buildMarkdownReport(project) {
-  const report = buildReportDraft(project);
   const stats = getQuestionStats(project);
-  const topics = getTopics(project);
-  const pii = detectPii(project);
+  const topics = getPublishableTopics(project);
+  const comments = filterSensitiveComments(project, collectComments(project));
+  const report = buildPublishableReportDraft(project, getMetricSummary(project), stats, topics, comments);
+  const sensitiveCommentIds = getSensitiveCommentIds(project);
+  const pii = detectPii(project).filter((item) => !sensitiveCommentIds.has(item.comment.id));
+  const hiddenSensitiveComments = getSensitiveHiddenCommentCount(project, collectComments(project));
 
   return [
     `# ${report.headline}`,
@@ -5544,6 +6618,7 @@ function buildMarkdownReport(project) {
     `- Próg wyników liczbowych: ${project.thresholds?.numeric || 5}`,
     `- Próg komentarzy: ${project.thresholds?.comments || 10}`,
     `- Potencjalne wykrycia PII: ${pii.length}`,
+    hiddenSensitiveComments ? `- Pominięte komentarze oflagowane jako dane wrażliwe: ${hiddenSensitiveComments}` : "",
     "",
     "## Status",
     "",
@@ -5554,11 +6629,13 @@ function buildMarkdownReport(project) {
 function buildHtmlReport(project) {
   if (project.reportDeck?.slides?.length) return buildHtmlDeckReport(project);
 
-  const report = buildReportDraft(project);
   const stats = getQuestionStats(project);
-  const topics = getTopics(project);
-  const comments = collectComments(project).slice(0, 8);
-  const pii = detectPii(project);
+  const topics = getPublishableTopics(project);
+  const comments = filterSensitiveComments(project, collectComments(project)).slice(0, 8);
+  const report = buildPublishableReportDraft(project, getMetricSummary(project), stats, topics, filterSensitiveComments(project, collectComments(project)));
+  const sensitiveCommentIds = getSensitiveCommentIds(project);
+  const pii = detectPii(project).filter((item) => !sensitiveCommentIds.has(item.comment.id));
+  const hiddenSensitiveComments = getSensitiveHiddenCommentCount(project, collectComments(project));
 
   return `<!doctype html>
 <html lang="pl">
@@ -5617,6 +6694,7 @@ function buildHtmlReport(project) {
     <li>Próg wyników liczbowych: ${project.thresholds?.numeric || 5}</li>
     <li>Próg komentarzy: ${project.thresholds?.comments || 10}</li>
     <li>Potencjalne wykrycia PII: ${pii.length}</li>
+    ${hiddenSensitiveComments ? `<li>Pominięte komentarze oflagowane jako dane wrażliwe: ${hiddenSensitiveComments}</li>` : ""}
   </ul>
   <p class="note">Raport jest szkicem roboczym. Przed pokazaniem klientowi wymaga przeglądu konsultanta. Nie używać do decyzji kadrowych wobec pojedynczych osób ani do rozpoznawania emocji pracowników.</p>
 </body>
@@ -5625,7 +6703,9 @@ function buildHtmlReport(project) {
 
 function buildHtmlDeckReport(project) {
   const deckSettings = getReportDeckSettings(project);
-  const visibleSlides = getVisibleReportSlides(project);
+  const visibleSlides = getVisibleReportSlides(project)
+    .map((slide) => sanitizeReportSlideForExport(project, slide))
+    .filter(shouldGenerateReportSlide);
   return `<!doctype html>
 <html lang="pl">
 <head>
@@ -5667,10 +6747,18 @@ function buildHtmlDeckReport(project) {
 </head>
 <body>
   <main class="deck">
-    ${visibleSlides.length ? visibleSlides.map((slide) => renderHtmlDeckSlide(slide, deckSettings)).join("") : `<section class="slide theme-${escapeAttribute(deckSettings.theme)}"><div class="kicker">Raport</div><h2>Brak widocznych slajdów</h2><p>Wszystkie slajdy zostały ukryte w edytorze raportu.</p></section>`}
+    ${visibleSlides.length ? visibleSlides.map((slide) => renderHtmlDeckSlide(slide, deckSettings)).join("") : `<section class="slide theme-${escapeAttribute(deckSettings.theme)}"><div class="kicker">Raport</div><h2>Brak widocznych slajdów</h2><p>Wszystkie slajdy zostały ukryte w edytorze raportu albo pominięte po kontroli danych.</p></section>`}
   </main>
 </body>
 </html>`;
+}
+
+function sanitizeReportSlideForExport(project, slide) {
+  if (slide.type !== "quotes") return slide;
+  return {
+    ...slide,
+    items: filterReportQuoteItems(project, slide.items || [])
+  };
 }
 
 function renderHtmlDeckSlide(slide, deckSettings = defaultReportDeckSettings()) {
@@ -5726,6 +6814,57 @@ function renderHtmlDeckVisual(slide) {
     return `<div>${(slide.items || []).map((item) => `<div class="check">${escapeHtml(item.text || "")}</div>`).join("")}</div>`;
   }
   return "";
+}
+
+function openPdfPrintReport(project) {
+  const html = buildPdfPrintReport(project);
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const popup = window.open(url, "_blank");
+  if (!popup) {
+    URL.revokeObjectURL(url);
+    downloadText(`${project.client}-${project.name}-pdf.html`, html, "text/html;charset=utf-8");
+    toast("Przeglądarka zablokowała okno PDF. Pobrano plik HTML, który możesz otworzyć i zapisać jako PDF.");
+    return;
+  }
+
+  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+  toast("Otwieram raport w trybie zapisu PDF.");
+}
+
+function buildPdfPrintReport(project) {
+  const isDeck = Boolean(project.reportDeck?.slides?.length);
+  const baseHtml = buildHtmlReport(project);
+  const printCss = isDeck
+    ? `
+    @page { size: A4 landscape; margin: 0; }
+    @media print {
+      html, body { width: 100%; min-height: 100%; }
+      .slide { break-after: page; page-break-after: always; min-height: 100vh; box-shadow: none; }
+      .slide:last-child { break-after: auto; page-break-after: auto; }
+    }`
+    : `
+    @page { size: A4 portrait; margin: 14mm; }
+    @media print {
+      body { margin: 0; }
+      h2 { break-after: avoid; page-break-after: avoid; }
+      table, blockquote, .stat { break-inside: avoid; page-break-inside: avoid; }
+    }`;
+  const printScript = `
+  <script>
+    window.addEventListener("load", () => {
+      document.title = ${JSON.stringify(pdfFileBaseName(project))};
+      setTimeout(() => window.print(), 350);
+    });
+  </script>`;
+
+  return baseHtml
+    .replace("</style>", `${printCss}\n  </style>`)
+    .replace("</body>", `${printScript}\n</body>`);
+}
+
+function pdfFileBaseName(project) {
+  return `${project.client || "GoodHR"} - ${project.name || "Raport"} - PDF`;
 }
 
 function downloadText(filename, text, type = "text/plain;charset=utf-8") {

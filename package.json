@@ -6,5 +6,8 @@
     "serve:public": "powershell -ExecutionPolicy Bypass -File scripts/start-public.ps1",
     "deploy": "vercel --prod",
     "test": "node --test"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
   }
 }
